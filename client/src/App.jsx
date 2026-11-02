@@ -8,6 +8,15 @@ import EODTablePreview from './components/EODTablePreview';
 import WeeklyTaskChartModal from './components/WeeklyTaskChartModal';
 import OutlookHelperModal from './components/OutlookHelperModal';
 import { 
+  defaultUser, 
+  defaultContacts, 
+  defaultPresetGroups, 
+  getClientTodaySchedule,
+  generateClientDraft,
+  generateClientHtmlTable,
+  generateClientTextFormat
+} from './services/clientEmailService';
+import { 
   Sparkles, 
   Send, 
   Clock, 
@@ -30,11 +39,11 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  // App Data States
-  const [currentUser, setCurrentUser] = useState(null);
-  const [allUsers, setAllUsers] = useState([]);
-  const [allContacts, setAllContacts] = useState([]);
-  const [presetGroups, setPresetGroups] = useState([]);
+  // App Data States - seeded with robust defaults so static cloud deployments always work
+  const [currentUser, setCurrentUser] = useState(defaultUser);
+  const [allUsers, setAllUsers] = useState([defaultUser]);
+  const [allContacts, setAllContacts] = useState(defaultContacts);
+  const [presetGroups, setPresetGroups] = useState(defaultPresetGroups);
   const [mailboxData, setMailboxData] = useState({ drafts: [], sent: [], scheduled: [], stats: {} });
 
   // Email Composer States
@@ -47,8 +56,8 @@ export default function App() {
   const [scheduleData, setScheduleData] = useState(null);
   const [viewMode, setViewMode] = useState('table');
   const [isSyncingInbox, setIsSyncingInbox] = useState(false);
-  const [selectedTo, setSelectedTo] = useState([]);
-  const [selectedCc, setSelectedCc] = useState([]);
+  const [selectedTo, setSelectedTo] = useState([defaultContacts[0], defaultContacts[1]]);
+  const [selectedCc, setSelectedCc] = useState([defaultContacts[3]]);
   const [attachments, setAttachments] = useState([]);
 
   // Loading States
@@ -80,31 +89,41 @@ export default function App() {
     try {
       const headers = userId ? { 'x-user-id': userId } : {};
 
-      const userRes = await fetch('/api/auth/me', { headers });
-      const userData = await userRes.json();
-      if (userData.success) setCurrentUser(userData.user);
+      const userRes = await fetch('/api/auth/me', { headers }).catch(() => null);
+      if (userRes && userRes.ok) {
+        const userData = await userRes.json().catch(() => null);
+        if (userData?.success && userData.user) setCurrentUser(userData.user);
+      }
 
-      const allUsersRes = await fetch('/api/auth/users');
-      const allUsersData = await allUsersRes.json();
-      if (allUsersData.success) setAllUsers(allUsersData.users);
+      const allUsersRes = await fetch('/api/auth/users').catch(() => null);
+      if (allUsersRes && allUsersRes.ok) {
+        const allUsersData = await allUsersRes.json().catch(() => null);
+        if (allUsersData?.success && allUsersData.users) setAllUsers(allUsersData.users);
+      }
 
-      const contactsRes = await fetch('/api/contacts');
-      const contactsData = await contactsRes.json();
-      if (contactsData.success) setAllContacts(contactsData.contacts);
+      const contactsRes = await fetch('/api/contacts').catch(() => null);
+      if (contactsRes && contactsRes.ok) {
+        const contactsData = await contactsRes.json().catch(() => null);
+        if (contactsData?.success && contactsData.contacts?.length > 0) setAllContacts(contactsData.contacts);
+      }
 
-      const groupsRes = await fetch('/api/contacts/groups');
-      const groupsData = await groupsRes.json();
-      if (groupsData.success) setPresetGroups(groupsData.groups);
+      const groupsRes = await fetch('/api/contacts/groups').catch(() => null);
+      if (groupsRes && groupsRes.ok) {
+        const groupsData = await groupsRes.json().catch(() => null);
+        if (groupsData?.success && groupsData.groups?.length > 0) setPresetGroups(groupsData.groups);
+      }
 
-      const mailboxRes = await fetch('/api/emails/mailbox', { headers });
-      const mailboxOverview = await mailboxRes.json();
-      if (mailboxOverview.success) setMailboxData(mailboxOverview);
+      const mailboxRes = await fetch('/api/emails/mailbox', { headers }).catch(() => null);
+      if (mailboxRes && mailboxRes.ok) {
+        const mailboxOverview = await mailboxRes.json().catch(() => null);
+        if (mailboxOverview?.success && mailboxOverview.drafts) setMailboxData(mailboxOverview);
+      }
     } catch (err) {
-      console.error('Initial data fetch error:', err);
+      console.warn('Backend API unavailable, using autonomous offline client data:', err);
     }
   };
 
-  // AI Generation from Prompt
+  // AI Generation from Prompt (Works online with API, and seamlessly offline/static via clientEmailService)
   const handleGenerate = async (customPrompt = null) => {
     const activePrompt = customPrompt || prompt;
     if (!activePrompt.trim()) {
@@ -114,21 +133,39 @@ export default function App() {
 
     setIsGenerating(true);
     try {
-      const res = await fetch('/api/ai/generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': currentUser?.id || 'usr-althaf'
-        },
-        body: JSON.stringify({
-          prompt: activePrompt,
-          tone,
-          attachments
-        })
-      });
+      let data = null;
 
-      const data = await res.json();
-      if (data.success && data.draft) {
+      // Try server API first if reachable
+      try {
+        const res = await fetch('/api/ai/generate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': currentUser?.id || 'usr-althaf'
+          },
+          body: JSON.stringify({
+            prompt: activePrompt,
+            tone,
+            attachments
+          })
+        });
+        if (res && res.ok) {
+          const contentType = res.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const json = await res.json().catch(() => null);
+            if (json && json.success) data = json;
+          }
+        }
+      } catch (networkErr) {
+        console.warn('Server API not responding, falling back to autonomous client-side AI generator');
+      }
+
+      // Fallback: Autonomous client-side generator ensures Vercel / static hosting works flawlessly
+      if (!data) {
+        data = generateClientDraft(activePrompt, tone, 5);
+      }
+
+      if (data && data.success && data.draft) {
         setSubject(data.draft.subject);
         setBody(data.draft.body);
         setHtmlBody(data.draft.htmlBody || '');
@@ -146,10 +183,11 @@ export default function App() {
             : `Auto-filled subject, body, and selected ${data.draft.suggestedTo.length} TO and ${data.draft.suggestedCc.length} CC recipients.`
         );
       } else {
-        showToast(data.error || 'Failed to generate email', 'error');
+        showToast(data?.error || 'Failed to generate email', 'error');
       }
     } catch (err) {
-      showToast('Error communicating with AI assistant', 'error');
+      console.error('Error generating email:', err);
+      showToast('Error generating email draft', 'error');
     } finally {
       setIsGenerating(false);
     }
@@ -205,45 +243,57 @@ export default function App() {
   // Select a specific day (Day 1..5) from the Weekly Chart for EOD table
   const handleSelectDayForEOD = async (dayNumber) => {
     try {
-      const res = await fetch('/api/emails/set-active-eod-day', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dayNumber })
-      });
-      const data = await res.json();
-      if (data.success && data.schedule) {
-        setScheduleData(data.schedule);
-        setHtmlBody(data.htmlTable);
-        if (data.body) setBody(data.body);
-        setIsEODTable(true);
-        setViewMode('table');
+      let schedule = null;
+      let htmlTable = '';
+      let bodyText = '';
 
-        const now = new Date();
-        const dd = String(now.getDate()).padStart(2, '0');
-        const mm = String(now.getMonth() + 1).padStart(2, '0');
-        const yyyy = now.getFullYear();
-        setSubject(`Daily Status Report [${dd}-${mm}-${yyyy}]`);
+      try {
+        const res = await fetch('/api/emails/set-active-eod-day', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dayNumber })
+        });
+        if (res && res.ok) {
+          const data = await res.json().catch(() => null);
+          if (data && data.success && data.schedule) {
+            schedule = data.schedule;
+            htmlTable = data.htmlTable;
+            bodyText = data.body;
+          }
+        }
+      } catch (err) {}
 
-        // Fetch text format for plain text editor fallback
-        const textRes = await fetch(`/api/emails/eod-schedule?day=${dayNumber}`);
-        const textData = await textRes.json();
-        if (!data.body && textData?.body) setBody(textData.body);
-
-        // Auto select Prasanna Gunji & Nafisa Khanam Pathan in TO
-        const prasanna = allContacts.find(c => c.email.includes('prasanna'));
-        const nafisa = allContacts.find(c => c.email.includes('nafisa'));
-        const toRecipients = [];
-        if (prasanna) toRecipients.push(prasanna);
-        if (nafisa) toRecipients.push(nafisa);
-        if (toRecipients.length > 0) setSelectedTo(toRecipients);
-
-        showToast(
-          `Loaded Day ${dayNumber} (${data.schedule.dayName}) for EOD!`,
-          'success',
-          `Planned: ${data.schedule.plannedToday.react.length} React & ${data.schedule.plannedToday.tasks.length} Tasks. Completed: 5 points.`
-        );
+      // Fallback: Autonomous client calculation if server is offline
+      if (!schedule) {
+        schedule = getClientTodaySchedule(dayNumber);
+        htmlTable = generateClientHtmlTable(schedule);
+        bodyText = generateClientTextFormat(schedule);
       }
+
+      setScheduleData(schedule);
+      setHtmlBody(htmlTable);
+      setBody(bodyText);
+      setIsEODTable(true);
+      setViewMode('table');
+
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, '0');
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const yyyy = now.getFullYear();
+      setSubject(`Daily Status Report [${dd}-${mm}-${yyyy}]`);
+
+      // Auto select Prasanna Gunji & Nafisa Khanam Pathan in TO
+      const prasanna = allContacts.find(c => c.email.includes('prasanna')) || defaultContacts[0];
+      const nafisa = allContacts.find(c => c.email.includes('nafisa')) || defaultContacts[1];
+      setSelectedTo([prasanna, nafisa]);
+
+      showToast(
+        `Loaded Day ${dayNumber} (${schedule.activeDayName || 'Workday'}) for EOD!`,
+        'success',
+        `Planned: ${schedule.plannedToday.react.length} React & ${schedule.plannedToday.tasks.length} Tasks. Completed: 5 points.`
+      );
     } catch (err) {
+      console.error('Error selecting day for EOD:', err);
       showToast('Error setting active day for EOD', 'error');
     }
   };
@@ -423,27 +473,44 @@ export default function App() {
 
     // 2. Open Outlook Deeplink & Trigger Guidance Modal
     try {
-      const res = await fetch('/api/emails/web-outlook-link', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': currentUser?.id || 'usr-althaf'
-        },
-        body: JSON.stringify({
-          toRecipients: selectedTo,
-          ccRecipients: selectedCc,
-          subject,
-          body
-        })
-      });
+      let url = '';
+      try {
+        const res = await fetch('/api/emails/web-outlook-link', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': currentUser?.id || 'usr-althaf'
+          },
+          body: JSON.stringify({
+            toRecipients: selectedTo,
+            ccRecipients: selectedCc,
+            subject,
+            body
+          })
+        });
+        if (res && res.ok) {
+          const data = await res.json().catch(() => null);
+          if (data && data.success && data.url) url = data.url;
+        }
+      } catch (e) {}
 
-      const data = await res.json();
-      if (data.success && data.url) {
-        setWebOutlookUrl(data.url);
-        window.open(data.url, '_blank');
-        setOutlookHelperOpen(true);
-        showToast('Draft opened in Chrome Outlook! Press Ctrl+V in Outlook to paste table.', 'success');
+      // Fallback: Generate Microsoft Outlook web compose URL client-side
+      if (!url) {
+        const toParam = selectedTo.map(c => c.email).join(';');
+        const ccParam = selectedCc.map(c => c.email).join(';');
+        const baseUrl = 'https://outlook.office.com/mail/deeplink/compose';
+        const parts = [];
+        if (toParam) parts.push(`to=${encodeURIComponent(toParam)}`);
+        if (ccParam) parts.push(`cc=${encodeURIComponent(ccParam)}`);
+        if (subject) parts.push(`subject=${encodeURIComponent(subject)}`);
+        if (body) parts.push(`body=${encodeURIComponent(body.substring(0, 1000))}`);
+        url = `${baseUrl}?${parts.join('&')}`;
       }
+
+      setWebOutlookUrl(url);
+      window.open(url, '_blank');
+      setOutlookHelperOpen(true);
+      showToast('Draft opened in Chrome Outlook! Press Ctrl+V in Outlook to paste table.', 'success');
     } catch (err) {
       showToast('Could not open Chrome Outlook tab', 'error');
     }
@@ -454,21 +521,62 @@ export default function App() {
     try {
       const container = document.getElementById('eod-table-container');
       const richHtml = container ? container.innerHTML : htmlBody;
+      let downloaded = false;
 
-      const res = await fetch('/api/emails/download-draft-eml', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          toRecipients: selectedTo,
-          ccRecipients: selectedCc,
-          subject,
+      try {
+        const res = await fetch('/api/emails/download-draft-eml', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            toRecipients: selectedTo,
+            ccRecipients: selectedCc,
+            subject,
+            body,
+            htmlBody: richHtml
+          })
+        });
+
+        if (res && res.ok) {
+          const blob = await res.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `Outlook_Draft_${Date.now()}.eml`;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+          downloaded = true;
+        }
+      } catch (netErr) {}
+
+      // Fallback: Autonomous client-side EML file generation
+      if (!downloaded) {
+        const toHeader = selectedTo.map(c => `"${c.name}" <${c.email}>`).join(', ');
+        const ccHeader = selectedCc.map(c => `"${c.name}" <${c.email}>`).join(', ');
+        const boundary = `----=_NextPart_${Date.now()}`;
+        const emlContent = [
+          `To: ${toHeader}`,
+          ccHeader ? `Cc: ${ccHeader}` : '',
+          `Subject: ${subject}`,
+          `X-Unsent: 1`,
+          `MIME-Version: 1.0`,
+          `Content-Type: multipart/alternative; boundary="${boundary}"`,
+          '',
+          `--${boundary}`,
+          `Content-Type: text/plain; charset=utf-8`,
+          '',
           body,
-          htmlBody: richHtml
-        })
-      });
+          '',
+          `--${boundary}`,
+          `Content-Type: text/html; charset=utf-8`,
+          '',
+          richHtml || body.replace(/\n/g, '<br/>'),
+          '',
+          `--${boundary}--`
+        ].filter(line => line !== null).join('\r\n');
 
-      if (res.ok) {
-        const blob = await res.blob();
+        const blob = new Blob([emlContent], { type: 'message/rfc822' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -477,10 +585,9 @@ export default function App() {
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
-        showToast('Downloaded Outlook .eml draft! Opens directly in Outlook with the table rendered.', 'success');
-      } else {
-        showToast('Failed to generate Outlook draft', 'error');
       }
+
+      showToast('Downloaded Outlook .eml draft! Opens directly in Outlook with the table rendered.', 'success');
     } catch (err) {
       showToast('Error downloading Outlook draft', 'error');
     }
