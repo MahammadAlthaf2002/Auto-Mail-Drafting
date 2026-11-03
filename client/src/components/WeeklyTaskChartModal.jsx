@@ -19,11 +19,12 @@ export default function WeeklyTaskChartModal({
   isOpen,
   onClose,
   onSelectDayForEOD,
-  currentActiveDay = 5
+  currentActiveDay = 5,
+  initialTab = 'chart'
 }) {
   const [chartData, setChartData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('chart'); // 'chart' | 'paste' | 'edit'
+  const [activeTab, setActiveTab] = useState(initialTab || 'chart'); // 'chart' | 'paste' | 'edit'
   const [pasteText, setPasteText] = useState('');
   const [isParsing, setIsParsing] = useState(false);
   const [editingDay, setEditingDay] = useState(null);
@@ -31,9 +32,12 @@ export default function WeeklyTaskChartModal({
 
   useEffect(() => {
     if (isOpen) {
+      if (initialTab) {
+        setActiveTab(initialTab);
+      }
       fetchWeeklyChart();
     }
-  }, [isOpen]);
+  }, [isOpen, initialTab]);
 
   const fetchWeeklyChart = async () => {
     setIsLoading(true);
@@ -42,7 +46,7 @@ export default function WeeklyTaskChartModal({
       const contentType = res.headers.get('content-type');
       if (res.ok && contentType && contentType.includes('application/json')) {
         const data = await res.json();
-        if (data.success) {
+        if (data.success && data.days) {
           setChartData(data);
           return;
         }
@@ -50,18 +54,38 @@ export default function WeeklyTaskChartModal({
       // Fallback to client-side curriculum data
       setChartData({
         success: true,
-        weekName: 'React & Frontend Fundamentals (Week 3)',
+        sheet: {
+          id: 'sheet-fallback',
+          title: 'Web Development Weekly Curriculum',
+          sender: 'prasanna.gunji@nybinfotech.com',
+          recipient: 'nafisa.khanam@nybinfotech.com',
+          technology: 'Web Development',
+          syncSource: 'Standard Curriculum & Prasanna Mam Email Format',
+          totalDays: defaultWeeklyDays.length,
+          activeDayNumber: currentActiveDay || 5,
+          activeDayName: 'Today',
+          updatedAt: new Date().toISOString()
+        },
         syncSource: 'Standard Curriculum & Prasanna Mam Email Format',
-        lastUpdated: new Date().toISOString(),
         days: defaultWeeklyDays
       });
     } catch (err) {
       console.warn('Fetch weekly chart error, using fallback:', err);
       setChartData({
         success: true,
-        weekName: 'React & Frontend Fundamentals (Week 3)',
+        sheet: {
+          id: 'sheet-fallback',
+          title: 'Web Development Weekly Curriculum',
+          sender: 'prasanna.gunji@nybinfotech.com',
+          recipient: 'nafisa.khanam@nybinfotech.com',
+          technology: 'Web Development',
+          syncSource: 'Standard Curriculum & Prasanna Mam Email Format',
+          totalDays: defaultWeeklyDays.length,
+          activeDayNumber: currentActiveDay || 5,
+          activeDayName: 'Today',
+          updatedAt: new Date().toISOString()
+        },
         syncSource: 'Standard Curriculum & Prasanna Mam Email Format',
-        lastUpdated: new Date().toISOString(),
         days: defaultWeeklyDays
       });
     } finally {
@@ -81,7 +105,7 @@ export default function WeeklyTaskChartModal({
           setChartData(data);
           setStatusMessage({
             type: 'success',
-            text: `Weekly Tasks Synced: ${data.syncSource}`
+            text: `Weekly Tasks Synced: ${data.syncSource || 'Outlook Inbox'}`
           });
           return;
         }
@@ -89,9 +113,19 @@ export default function WeeklyTaskChartModal({
       // If server sync unavailable (e.g. static hosting)
       setChartData({
         success: true,
-        weekName: 'React & Frontend Fundamentals (Curated)',
+        sheet: {
+          id: 'sheet-offline',
+          title: 'React & Frontend Fundamentals (Curated)',
+          sender: 'prasanna.gunji@nybinfotech.com',
+          recipient: 'nafisa.khanam@nybinfotech.com',
+          technology: 'Web Development',
+          syncSource: 'Curated by Prasanna Gunji (Offline/Static Mode)',
+          totalDays: defaultWeeklyDays.length,
+          activeDayNumber: currentActiveDay || 5,
+          activeDayName: 'Today',
+          updatedAt: new Date().toISOString()
+        },
         syncSource: 'Curated by Prasanna Gunji (Offline/Static Mode)',
-        lastUpdated: new Date().toISOString(),
         days: defaultWeeklyDays
       });
       setStatusMessage({
@@ -101,9 +135,19 @@ export default function WeeklyTaskChartModal({
     } catch (err) {
       setChartData({
         success: true,
-        weekName: 'React & Frontend Fundamentals (Curated)',
+        sheet: {
+          id: 'sheet-offline',
+          title: 'React & Frontend Fundamentals (Curated)',
+          sender: 'prasanna.gunji@nybinfotech.com',
+          recipient: 'nafisa.khanam@nybinfotech.com',
+          technology: 'Web Development',
+          syncSource: 'Curated by Prasanna Gunji (Offline/Static Mode)',
+          totalDays: defaultWeeklyDays.length,
+          activeDayNumber: currentActiveDay || 5,
+          activeDayName: 'Today',
+          updatedAt: new Date().toISOString()
+        },
         syncSource: 'Curated by Prasanna Gunji (Offline/Static Mode)',
-        lastUpdated: new Date().toISOString(),
         days: defaultWeeklyDays
       });
       setStatusMessage({
@@ -131,7 +175,7 @@ export default function WeeklyTaskChartModal({
       const contentType = res.headers.get('content-type');
       if (res.ok && contentType && contentType.includes('application/json')) {
         const data = await res.json();
-        if (data.success) {
+        if (data.success && data.days) {
           setChartData(data);
           setActiveTab('chart');
           setPasteText('');
@@ -146,9 +190,19 @@ export default function WeeklyTaskChartModal({
       const parsedDays = parseWeeklyEmailClient(pasteText);
       const newChartData = {
         success: true,
-        weekName: 'Updated Weekly Schedule (Client Parsed)',
+        sheet: {
+          id: `sheet-client-${Date.now()}`,
+          title: 'Web Development Weekly Tasks (Updated)',
+          sender: 'prasanna.gunji@nybinfotech.com',
+          recipient: 'nafisa.khanam@nybinfotech.com',
+          technology: 'Web Development',
+          syncSource: 'Pasted Prasanna Mam Email (Direct Parse)',
+          totalDays: parsedDays.length,
+          activeDayNumber: currentActiveDay || 1,
+          activeDayName: 'Today',
+          updatedAt: new Date().toISOString()
+        },
         syncSource: 'Pasted Prasanna Mam Email (Direct Parse)',
-        lastUpdated: new Date().toISOString(),
         days: parsedDays
       };
       setChartData(newChartData);
@@ -162,9 +216,19 @@ export default function WeeklyTaskChartModal({
       const parsedDays = parseWeeklyEmailClient(pasteText);
       const newChartData = {
         success: true,
-        weekName: 'Updated Weekly Schedule (Client Parsed)',
+        sheet: {
+          id: `sheet-client-${Date.now()}`,
+          title: 'Web Development Weekly Tasks (Updated)',
+          sender: 'prasanna.gunji@nybinfotech.com',
+          recipient: 'nafisa.khanam@nybinfotech.com',
+          technology: 'Web Development',
+          syncSource: 'Pasted Prasanna Mam Email (Direct Parse)',
+          totalDays: parsedDays.length,
+          activeDayNumber: currentActiveDay || 1,
+          activeDayName: 'Today',
+          updatedAt: new Date().toISOString()
+        },
         syncSource: 'Pasted Prasanna Mam Email (Direct Parse)',
-        lastUpdated: new Date().toISOString(),
         days: parsedDays
       };
       setChartData(newChartData);
@@ -326,14 +390,16 @@ export default function WeeklyTaskChartModal({
               {/* Day Grid Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                 {chartData?.days?.map((day) => {
-                  const isCurrent = day.dayNumber === chartData.sheet.activeDayNumber;
+                  const isCurrent = day?.dayNumber === (chartData?.sheet?.activeDayNumber || currentActiveDay || 5);
+                  const topics = Array.isArray(day?.topicsCovered) ? day.topicsCovered : [];
+                  const tasks = Array.isArray(day?.assignedTasks) ? day.assignedTasks : [];
                   return (
                     <div
-                      key={day.id}
+                      key={day?.id || `day-${day?.dayNumber}`}
                       className={`rounded-xl border p-4 transition-all flex flex-col justify-between ${
                         isCurrent 
                           ? 'border-[#0078d4] bg-blue-50/40 ring-2 ring-[#0078d4]/20 shadow-md' 
-                          : day.isHoliday 
+                          : day?.isHoliday 
                           ? 'border-amber-300 bg-amber-50/50' 
                           : 'border-slate-200 bg-white hover:border-slate-300'
                       }`}
@@ -343,10 +409,10 @@ export default function WeeklyTaskChartModal({
                         <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-200">
                           <div className="flex items-center space-x-2">
                             <span className="font-extrabold text-sm text-slate-900">
-                              Day {day.dayNumber} ({day.dayName})
+                              Day {day?.dayNumber} ({day?.dayName || `Day ${day?.dayNumber}`})
                             </span>
                           </div>
-                          {day.isHoliday ? (
+                          {day?.isHoliday ? (
                             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
                               🏖️ Holiday
                             </span>
@@ -354,7 +420,7 @@ export default function WeeklyTaskChartModal({
                             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#0078d4] text-white">
                               ⭐ Today
                             </span>
-                          ) : day.status === 'completed' ? (
+                          ) : day?.status === 'completed' ? (
                             <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800">
                               ✓ Completed
                             </span>
@@ -365,10 +431,10 @@ export default function WeeklyTaskChartModal({
                           )}
                         </div>
 
-                        {day.isHoliday ? (
+                        {day?.isHoliday ? (
                           <div className="py-6 text-center text-xs text-amber-800">
                             <Sun className="w-6 h-6 mx-auto mb-1 text-amber-600" />
-                            <p className="font-bold">{day.holidayReason || 'Public / Company Holiday'}</p>
+                            <p className="font-bold">{day?.holidayReason || 'Public / Company Holiday'}</p>
                             <p className="text-[11px] text-amber-700 mt-1">No tasks assigned for this day</p>
                           </div>
                         ) : (
@@ -377,10 +443,10 @@ export default function WeeklyTaskChartModal({
                             <div>
                               <p className="font-bold text-slate-900 mb-1 text-[11px] flex items-center justify-between">
                                 <span>1. React (Topics Covered):</span>
-                                <span className="font-semibold text-[#0078d4]">{day.topicsCovered.length} lines</span>
+                                <span className="font-semibold text-[#0078d4]">{topics.length} lines</span>
                               </p>
                               <ul className="list-disc pl-4 space-y-1.5 text-slate-700 text-[11px]">
-                                {day.topicsCovered.map((t, idx) => (
+                                {topics.map((t, idx) => (
                                   <li key={idx} className="leading-relaxed break-words">{t}</li>
                                 ))}
                               </ul>
@@ -390,10 +456,10 @@ export default function WeeklyTaskChartModal({
                             <div>
                               <p className="font-bold text-slate-900 mb-1 text-[11px] flex items-center justify-between">
                                 <span>2. Tasks (Assigned Tasks):</span>
-                                <span className="font-semibold text-emerald-700">{day.assignedTasks.length} lines</span>
+                                <span className="font-semibold text-emerald-700">{tasks.length} lines</span>
                               </p>
                               <ul className="list-disc pl-4 space-y-1.5 text-slate-700 text-[11px]">
-                                {day.assignedTasks.map((t, idx) => (
+                                {tasks.map((t, idx) => (
                                   <li key={idx} className="leading-relaxed break-words">{t}</li>
                                 ))}
                               </ul>
@@ -525,7 +591,7 @@ export default function WeeklyTaskChartModal({
                     </label>
                     <textarea
                       rows={5}
-                      value={editingDay.topicsCovered.join('\n')}
+                      value={(Array.isArray(editingDay.topicsCovered) ? editingDay.topicsCovered : []).join('\n')}
                       onChange={(e) => setEditingDay(prev => ({
                         ...prev,
                         topicsCovered: e.target.value.split('\n').map(l => l.trim()).filter(Boolean)
@@ -541,7 +607,7 @@ export default function WeeklyTaskChartModal({
                     </label>
                     <textarea
                       rows={5}
-                      value={editingDay.assignedTasks.join('\n')}
+                      value={(Array.isArray(editingDay.assignedTasks) ? editingDay.assignedTasks : []).join('\n')}
                       onChange={(e) => setEditingDay(prev => ({
                         ...prev,
                         assignedTasks: e.target.value.split('\n').map(l => l.trim()).filter(Boolean)

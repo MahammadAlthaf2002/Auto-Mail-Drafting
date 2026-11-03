@@ -21,7 +21,17 @@ class AIService {
 
     const allContacts = db.prepare('SELECT * FROM contacts').all();
     const lower = (prompt || '').toLowerCase();
-    const isEOD = lower.includes('eod') || lower.includes('evening') || lower.includes('task summary') || lower.includes('daily') || lower.includes('task') || lower.includes('react');
+    const isPastedCurriculum = (lower.includes('topics covered') || lower.includes('syllabus') || lower.includes('day 1') || lower.includes('day 2')) && (lower.includes('assigned') || lower.includes('task'));
+    
+    if (isPastedCurriculum) {
+      try {
+        inboxTaskSyncService.parseWeeklyEmailContent(prompt, 'Pasted in Main Prompt');
+      } catch (e) {
+        console.warn('Error parsing pasted curriculum in prompt:', e);
+      }
+    }
+
+    const isEOD = isPastedCurriculum || lower.includes('eod') || lower.includes('evening') || lower.includes('task summary') || lower.includes('daily') || lower.includes('task') || lower.includes('react');
 
     // 1. Smart Recipient Matching from Directory based on Prompt Analysis
     const suggestedRecipients = this.detectSuggestedRecipients(prompt, allContacts);

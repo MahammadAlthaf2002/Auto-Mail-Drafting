@@ -70,6 +70,7 @@ export default function App() {
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [scheduledQueueOpen, setScheduledQueueOpen] = useState(false);
   const [weeklyChartModalOpen, setWeeklyChartModalOpen] = useState(false);
+  const [weeklyChartInitialTab, setWeeklyChartInitialTab] = useState('chart');
   const [outlookHelperOpen, setOutlookHelperOpen] = useState(false);
   const [webOutlookUrl, setWebOutlookUrl] = useState('');
 
@@ -288,9 +289,9 @@ export default function App() {
       setSelectedTo([prasanna, nafisa]);
 
       showToast(
-        `Loaded Day ${dayNumber} (${schedule.activeDayName || 'Workday'}) for EOD!`,
+        `Loaded Day ${dayNumber} (${schedule?.activeDayName || 'Workday'}) for EOD!`,
         'success',
-        `Planned: ${schedule.plannedToday.react.length} React & ${schedule.plannedToday.tasks.length} Tasks. Completed: 5 points.`
+        `Planned: ${schedule?.plannedToday?.react?.length || 0} React & ${schedule?.plannedToday?.tasks?.length || 0} Tasks. Completed: 5 points.`
       );
     } catch (err) {
       console.error('Error selecting day for EOD:', err);
@@ -792,7 +793,10 @@ export default function App() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => setWeeklyChartModalOpen(true)}
+                onClick={() => {
+                  setWeeklyChartInitialTab('chart');
+                  setWeeklyChartModalOpen(true);
+                }}
                 className="px-3.5 py-2 rounded-lg bg-white border border-[#0078d4] hover:bg-blue-50 text-[#0078d4] font-bold text-xs transition-colors flex items-center space-x-1.5 shadow-xs"
               >
                 <BarChart2 className="w-3.5 h-3.5" />
@@ -800,7 +804,10 @@ export default function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setWeeklyChartModalOpen(true)}
+                onClick={() => {
+                  setWeeklyChartInitialTab('paste');
+                  setWeeklyChartModalOpen(true);
+                }}
                 className="px-3.5 py-2 rounded-lg bg-white border border-emerald-500 hover:bg-emerald-50 text-emerald-700 font-bold text-xs transition-colors flex items-center space-x-1.5 shadow-xs"
               >
                 <span>📝 Paste Real Email</span>
@@ -1105,6 +1112,7 @@ export default function App() {
         onClose={() => setWeeklyChartModalOpen(false)}
         onSelectDayForEOD={handleSelectDayForEOD}
         currentActiveDay={scheduleData?.dayNumber || 5}
+        initialTab={weeklyChartInitialTab}
       />
 
       {/* Chrome Outlook Helper Guidance Modal */}

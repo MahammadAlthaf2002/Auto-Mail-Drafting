@@ -447,8 +447,97 @@ export function generateClientDraft(promptText, tone = 'professional', activeDay
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const yyyy = now.getFullYear();
 
-  const isEOD = lower.includes('eod') || lower.includes('evening') || lower.includes('task summary') || lower.includes('daily') || lower.includes('task') || lower.includes('react');
-  const isLeave = lower.includes('leave') || lower.includes('vacation') || lower.includes('sick') || lower.includes('casual') || lower.includes('pto') || lower.includes('off');
+  const isPastedCurriculum = (lower.includes('topics covered') || lower.includes('topics') || lower.includes('syllabus') || lower.includes('day 1') || lower.includes('day 2')) && (lower.includes('assigned') || lower.includes('task') || lower.includes('assignment'));
+  const isEOD = isPastedCurriculum || lower.includes('eod') || lower.includes('evening') || lower.includes('task summary') || lower.includes('daily') || lower.includes('task') || lower.includes('react');
+  const isLeave = !isPastedCurriculum && (lower.includes('leave') || lower.includes('vacation') || lower.includes('sick') || lower.includes('casual') || lower.includes('pto') || lower.includes('off'));
+
+  if (isPastedCurriculum) {
+    const parsedDays = parseWeeklyEmailClient(promptText);
+    const targetDay = parsedDays.find(d => d.dayNumber === activeDay) || parsedDays[0] || defaultWeeklyDays[0];
+
+    const reactPrefixes = [
+      'Understood and applied',
+      'Implemented component-level',
+      'Mastered core workflow for',
+      'Practiced architecture and state handling for',
+      'Reviewed best practices and code syntax for'
+    ];
+    const taskPrefixes = [
+      'Successfully developed',
+      'Configured and verified',
+      'Built and integrated',
+      'Tested responsiveness and validation for',
+      'Staged and pushed clean updates for'
+    ];
+
+    const simplifyAction = (text, prefix) => {
+      let clean = (text || '')
+        .replace(/^(learn|study|review|understand|explore|master|read)\s+/i, '')
+        .replace(/^(build|create|develop|code|implement|setup|configure|design|write|construct|test)\s+/i, '')
+        .replace(/^(practiced|learned|mastered|implemented|configured|built|designed|tested|verified)\s+/i, '');
+      clean = clean.charAt(0).toLowerCase() + clean.slice(1);
+      return `${prefix} ${clean}`;
+    };
+
+    const compReact = (targetDay.topicsCovered || []).slice(0, 5).map((t, idx) => simplifyAction(t, reactPrefixes[idx % reactPrefixes.length]));
+    while (compReact.length < 5) {
+      compReact.push(defaultWeeklyDays[0].completedReact[compReact.length] || 'Reviewed component structure');
+    }
+
+    const compTasks = (targetDay.assignedTasks || []).slice(0, 5).map((t, idx) => simplifyAction(t, taskPrefixes[idx % taskPrefixes.length]));
+    while (compTasks.length < 5) {
+      compTasks.push(defaultWeeklyDays[0].completedTasks[compTasks.length] || 'Completed milestone task implementation');
+    }
+
+    const nextDay = parsedDays.find(d => d.dayNumber === (targetDay.dayNumber + 1));
+    const isNextDayNA = targetDay.dayNumber >= 5 || !nextDay;
+
+    const schedule = {
+      sheetId: 'sheet-pasted',
+      dayNumber: targetDay.dayNumber || 1,
+      dayName: targetDay.dayName || 'Workday',
+      isHoliday: false,
+      holidayReason: '',
+      syncSource: 'Pasted Custom Weekly Tasks',
+      senderEmail: 'prasanna.gunji@nybinfotech.com',
+      recipientLead: 'nafisa.khanam@nybinfotech.com',
+      technology: 'Web Development',
+      plannedToday: {
+        react: targetDay.topicsCovered || [],
+        tasks: targetDay.assignedTasks || []
+      },
+      completedToday: {
+        react: compReact,
+        tasks: compTasks
+      },
+      pending: 'N/A',
+      plannedNextDay: {
+        isNA: isNextDayNA,
+        nextDayName: !isNextDayNA ? nextDay.dayName : null,
+        react: !isNextDayNA ? (nextDay.topicsCovered || []) : [],
+        tasks: !isNextDayNA ? (nextDay.assignedTasks || []) : []
+      },
+      challenges: 'N/A'
+    };
+
+    const subject = `Daily Status Report [${dd}-${mm}-${yyyy}]`;
+    const htmlBody = generateClientHtmlTable(schedule);
+    const body = generateClientTextFormat(schedule);
+
+    return {
+      success: true,
+      draft: {
+        subject,
+        body,
+        htmlBody,
+        isEODTable: true,
+        scheduleData: schedule,
+        suggestedTo: [defaultContacts[0], defaultContacts[1]],
+        suggestedCc: [defaultContacts[3], defaultContacts[4]],
+        detectedTone: tone
+      }
+    };
+  }
 
   if (isEOD) {
     const schedule = getClientTodaySchedule(activeDay);
@@ -630,8 +719,72 @@ export function parseWeeklyEmailClient(rawText) {
         completedTasks: tasks.slice(0, 5)
       });
     }
+  } else {
+    // If no Day headers, check if single day's topics & tasks pasted
+    const rawLines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const topics = [];
+    const tasks = [];
+    let currentMode = 'topics';
+
+    for (const line of rawLines) {
+      const unbolded = line.replace(/^\*\*|\*\*$/g, '').trim();
+      const cleanedForHeader = unbolded.replace(/^[#*\-•\s]+/, '').trim();
+      const isMini = /^(?:\d+[\.\)]\s*)?(?:mini\s*[-–]?\s*(?:assessment|task|project)s?|assessment\s*questions?|assessments?|quiz(?:zes)?|evaluation|self\s*assessment)\b/i.test(cleanedForHeader);
+      if (isMini) break;
+
+      if (/^(?:\d+[\.\)]\s*)?(?:topics?\s*covered|react\s*topics?|react|syllabus)/i.test(unbolded)) {
+        currentMode = 'topics';
+        continue;
+      }
+      if (/^(?:\d+[\.\)]\s*)?(?:assigned?\s*tasks?|tasks?\s*assigned|tasks?|assignments?)/i.test(unbolded)) {
+        currentMode = 'tasks';
+        continue;
+      }
+
+      const cleanLine = unbolded.replace(/^[\d+.)\-•*#\s]+/, '').trim();
+      if (cleanLine.length < 2) continue;
+
+      if (currentMode === 'topics') topics.push(cleanLine);
+      else tasks.push(cleanLine);
+    }
+
+    if (topics.length > 0 || tasks.length > 0) {
+      parsedDays.push({
+        id: 'day-pasted-1',
+        dayNumber: 1,
+        dayName: 'Monday',
+        isHoliday: 0,
+        holidayReason: '',
+        topicsCovered: topics.length > 0 ? topics : ['Web Development module 1'],
+        assignedTasks: tasks.length > 0 ? tasks : ['Assigned practical tasks'],
+        completedReact: topics.slice(0, 5),
+        completedTasks: tasks.slice(0, 5)
+      });
+    }
   }
 
-  return parsedDays.length > 0 ? parsedDays : defaultWeeklyDays;
+  // Always merge parsed days into a complete 5-day week so all days 1-5 remain accessible
+  const finalDays = [];
+  for (let d = 1; d <= 5; d++) {
+    const match = parsedDays.find(p => p.dayNumber === d);
+    if (match) {
+      finalDays.push(match);
+    } else {
+      const defMatch = defaultWeeklyDays.find(def => def.dayNumber === d);
+      finalDays.push(defMatch || {
+        id: `day-default-${d}`,
+        dayNumber: d,
+        dayName: dayNames[d - 1] || `Day ${d}`,
+        isHoliday: 0,
+        holidayReason: '',
+        topicsCovered: [`Web Development Module ${d}`],
+        assignedTasks: [`Practical Milestone ${d}`],
+        completedReact: [`Understood and applied module ${d}`],
+        completedTasks: [`Developed milestone ${d}`]
+      });
+    }
+  }
+
+  return finalDays;
 }
 

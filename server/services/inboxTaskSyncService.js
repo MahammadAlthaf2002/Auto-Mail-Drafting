@@ -328,24 +328,79 @@ class InboxTaskSyncService {
         });
       }
     } else {
-      // Fallback: If no clear Day headers, split into 5 standard workdays
-      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-      const half = Math.ceil(lines.length / 5);
-      for (let d = 1; d <= 5; d++) {
-        const dayLines = lines.slice((d - 1) * half, d * half);
-        const topics = dayLines.slice(0, Math.ceil(dayLines.length / 2));
-        const tasks = dayLines.slice(Math.ceil(dayLines.length / 2));
-
+      // Check if text is a single day's block without explicit "Day X" header
+      const singleDay = this.extractTopicsAndTasksFromBlock(text);
+      if (singleDay.topics.length > 0 || singleDay.tasks.length > 0) {
         parsedDays.push({
-          dayNumber: d,
-          dayName: dayNames[d - 1],
+          dayNumber: this.activeDayOverride || 1,
+          dayName: dayNames[(this.activeDayOverride || 1) - 1] || 'Monday',
           isHoliday: false,
           holidayReason: '',
-          topicsCovered: topics.length > 0 ? topics : [`Web Development React curriculum module ${d}`],
-          assignedTasks: tasks.length > 0 ? tasks : [`Develop and stage milestone task deliverables for Day ${d}`],
-          completedReact: this.synthesizeFiveCompletedPoints(topics, 'react'),
-          completedTasks: this.synthesizeFiveCompletedPoints(tasks, 'tasks')
+          topicsCovered: singleDay.topics,
+          assignedTasks: singleDay.tasks,
+          completedReact: this.synthesizeFiveCompletedPoints(singleDay.topics, 'react'),
+          completedTasks: this.synthesizeFiveCompletedPoints(singleDay.tasks, 'tasks')
         });
+      } else {
+        // Fallback: If no clear Day headers, split into 5 standard workdays
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        const half = Math.ceil(lines.length / 5);
+        for (let d = 1; d <= 5; d++) {
+          const dayLines = lines.slice((d - 1) * half, d * half);
+          const topics = dayLines.slice(0, Math.ceil(dayLines.length / 2));
+          const tasks = dayLines.slice(Math.ceil(dayLines.length / 2));
+
+          parsedDays.push({
+            dayNumber: d,
+            dayName: dayNames[d - 1],
+            isHoliday: false,
+            holidayReason: '',
+            topicsCovered: topics.length > 0 ? topics : [`Web Development React curriculum module ${d}`],
+            assignedTasks: tasks.length > 0 ? tasks : [`Develop and stage milestone task deliverables for Day ${d}`],
+            completedReact: this.synthesizeFiveCompletedPoints(topics, 'react'),
+            completedTasks: this.synthesizeFiveCompletedPoints(tasks, 'tasks')
+          });
+        }
+      }
+    }
+
+    // Ensure all 5 days exist: merge parsed days with the existing 5-day curriculum
+    const existingDays = db.prepare(`
+      SELECT * FROM weekly_task_days 
+      WHERE sheet_id = (SELECT id FROM weekly_task_sheets WHERE is_active = 1 LIMIT 1)
+      ORDER BY day_number ASC
+    `).all();
+
+    const finalDays = [];
+    for (let d = 1; d <= 5; d++) {
+      const parsedMatch = parsedDays.find(p => p.dayNumber === d);
+      if (parsedMatch) {
+        finalDays.push(parsedMatch);
+      } else {
+        const existingMatch = existingDays.find(e => e.day_number === d);
+        if (existingMatch) {
+          finalDays.push({
+            dayNumber: d,
+            dayName: existingMatch.day_name,
+            isHoliday: Boolean(existingMatch.is_holiday),
+            holidayReason: existingMatch.holiday_reason || '',
+            topicsCovered: JSON.parse(existingMatch.topics_covered || '[]'),
+            assignedTasks: JSON.parse(existingMatch.assigned_tasks || '[]'),
+            completedReact: JSON.parse(existingMatch.completed_react || '[]'),
+            completedTasks: JSON.parse(existingMatch.completed_tasks || '[]')
+          });
+        } else {
+          finalDays.push({
+            dayNumber: d,
+            dayName: dayNames[d - 1],
+            isHoliday: false,
+            holidayReason: '',
+            topicsCovered: [`Web Development React curriculum module ${d}`],
+            assignedTasks: [`Develop and stage milestone task deliverables for Day ${d}`],
+            completedReact: this.synthesizeFiveCompletedPoints([`Module ${d}`], 'react'),
+            completedTasks: this.synthesizeFiveCompletedPoints([`Task ${d}`], 'tasks')
+          });
+        }
       }
     }
 
@@ -366,7 +421,7 @@ class InboxTaskSyncService {
       'Web Development',
       rawText,
       syncSource,
-      parsedDays.length
+      finalDays.length
     );
 
     const insertDay = db.prepare(`
@@ -374,7 +429,7 @@ class InboxTaskSyncService {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    for (const d of parsedDays) {
+    for (const d of finalDays) {
       insertDay.run(
         `day-${sheetId}-${d.dayNumber}`,
         sheetId,
