@@ -299,33 +299,138 @@ export const defaultWeeklyDays = [
   }
 ];
 
-export function getClientTodaySchedule(dayNumber = 5) {
-  const currentDay = defaultWeeklyDays.find(d => d.dayNumber === dayNumber) || defaultWeeklyDays[4];
-  const nextDay = defaultWeeklyDays.find(d => d.dayNumber === dayNumber + 1);
+export function detectTopicCategory(topics = [], defaultName = 'Topics Covered') {
+  const combined = (Array.isArray(topics) ? topics.join(' ') : String(topics || '')).toLowerCase();
+  if (combined.includes('javascript') || combined.includes('js ') || combined.includes('es6') || combined.includes('closure') || combined.includes('scope') || combined.includes('variable') || combined.includes('hoisting') || combined.includes('operator') || combined.includes('dom') || combined.includes('event loop') || combined.includes('callback') || combined.includes('promise')) return 'JavaScript';
+  if (combined.includes('react') || combined.includes('jsx') || combined.includes('hook') || combined.includes('redux') || combined.includes('router') || combined.includes('usestate') || combined.includes('useeffect')) return 'React';
+  if (combined.includes('node') || combined.includes('express') || combined.includes('mongodb') || combined.includes('backend')) return 'Node.js';
+  if (combined.includes('html') || combined.includes('css') || combined.includes('flexbox') || combined.includes('tailwind')) return 'HTML/CSS';
+  if (combined.includes('python') || combined.includes('django') || combined.includes('flask')) return 'Python';
+  if (combined.includes('angular')) return 'Angular';
+  if (combined.includes('vue')) return 'Vue';
+  return defaultName;
+}
+
+export function synthesizeClientCompletedPoints(plannedPoints = [], type = 'topics', categoryName = 'General') {
+  const list = Array.isArray(plannedPoints) ? plannedPoints.map(p => String(p).trim()).filter(Boolean) : [];
+  const cat = categoryName !== 'General' ? categoryName : detectTopicCategory(list);
+  
+  const simplifyToAction = (text, prefix) => {
+    let clean = text
+      .replace(/^(learn|study|review|understand|explore|master|read)\s+/i, '')
+      .replace(/^(build|create|develop|code|implement|setup|configure|design|write|construct|test)\s+/i, '')
+      .replace(/^(practiced|learned|mastered|implemented|configured|built|designed|tested|verified)\s+/i, '');
+    clean = clean.charAt(0).toLowerCase() + clean.slice(1);
+    return `${prefix} ${clean}`;
+  };
+
+  const topicPrefixes = [
+    'Understood and applied',
+    'Implemented core workflow for',
+    'Mastered syntax and usage for',
+    'Practiced practical execution of',
+    'Reviewed and validated implementation of'
+  ];
+
+  const taskPrefixes = [
+    'Successfully developed',
+    'Configured and verified',
+    'Built and integrated',
+    'Tested responsiveness and validation for',
+    'Staged and pushed clean updates for'
+  ];
+
+  const prefixes = (type === 'topics' || type === 'react') ? topicPrefixes : taskPrefixes;
+  const completed = [];
+
+  for (let i = 0; i < Math.min(list.length, 5); i++) {
+    const p = list[i];
+    const prefix = prefixes[i % prefixes.length];
+    completed.push(simplifyToAction(p, prefix));
+  }
+
+  while (completed.length < 5) {
+    const idx = completed.length;
+    if (list.length > 0) {
+      const item = list[idx % list.length];
+      const prefix = prefixes[idx % prefixes.length];
+      completed.push(`${prefix} ${item.toLowerCase()}`);
+    } else {
+      completed.push(`Completed scheduled ${cat} practical exercises`);
+    }
+  }
+
+  return completed.slice(0, 5).map(c => c.charAt(0).toUpperCase() + c.slice(1));
+}
+
+export function getClientTodaySchedule(dayNumber = 5, customDaysList = null) {
+  let days = customDaysList;
+  if (!days || !Array.isArray(days) || days.length === 0) {
+    try {
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('mailcraft_weekly_schedule') : null;
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          days = parsed;
+        }
+      }
+    } catch (e) {}
+  }
+  if (!days || !Array.isArray(days) || days.length === 0) {
+    days = defaultWeeklyDays;
+  }
+
+  const currentDay = days.find(d => d.dayNumber === dayNumber) || days[Math.min(dayNumber - 1, days.length - 1)] || days[0];
+  const nextDay = days.find(d => d.dayNumber === dayNumber + 1);
+
+  const plannedTodayTopics = currentDay.topicsCovered || [];
+  const plannedTodayTasks = currentDay.assignedTasks || [];
+  const topicCategory = currentDay.topicCategory || detectTopicCategory(plannedTodayTopics);
+
+  const completedTodayTopics = currentDay.completedReact && currentDay.completedReact.length === 5
+    ? currentDay.completedReact
+    : synthesizeClientCompletedPoints(plannedTodayTopics, 'topics', topicCategory);
+
+  const completedTodayTasks = currentDay.completedTasks && currentDay.completedTasks.length === 5
+    ? currentDay.completedTasks
+    : synthesizeClientCompletedPoints(plannedTodayTasks, 'tasks', topicCategory);
+
+  const isNextDayNA = dayNumber >= days.length || !nextDay || !nextDay.topicsCovered || nextDay.topicsCovered.length === 0;
+  const nextDayTopics = nextDay ? (nextDay.topicsCovered || []) : [];
+  const nextDayTasks = nextDay ? (nextDay.assignedTasks || []) : [];
+  const nextDayTopicCategory = nextDay ? (nextDay.topicCategory || detectTopicCategory(nextDayTopics) || topicCategory) : topicCategory;
 
   return {
     technology: 'Web Development',
     activeDayNumber: dayNumber,
-    activeDayName: currentDay.dayName,
+    activeDayName: currentDay.dayName || `Day ${dayNumber}`,
+    topicCategory,
+    nextDayTopicCategory,
     plannedToday: {
-      react: currentDay.topicsCovered,
-      tasks: currentDay.assignedTasks
+      topics: plannedTodayTopics,
+      tasks: plannedTodayTasks,
+      react: plannedTodayTopics
     },
     completedToday: {
-      react: currentDay.completedReact,
-      tasks: currentDay.completedTasks
+      topics: completedTodayTopics,
+      tasks: completedTodayTasks,
+      react: completedTodayTopics
     },
     pending: 'N/A',
     plannedNextDay: nextDay ? {
-      isNA: false,
+      isNA: isNextDayNA,
       nextDayName: nextDay.dayName,
-      react: nextDay.topicsCovered,
-      tasks: nextDay.assignedTasks
+      topicCategory: nextDayTopicCategory,
+      topics: nextDayTopics,
+      tasks: nextDayTasks,
+      react: nextDayTopics
     } : {
       isNA: true,
       nextDayName: 'Next Week',
-      react: [],
-      tasks: []
+      topicCategory,
+      topics: [],
+      tasks: [],
+      react: []
     },
     challenges: 'N/A'
   };
@@ -340,14 +445,25 @@ export function generateClientHtmlTable(data) {
   const pendingDisplay = '<div style="text-align: center; font-weight: 500;">N/A</div>';
   const challengesDisplay = '<div style="text-align: center; font-weight: 500;">N/A</div>';
 
-  const isNextDayNA = data.plannedNextDay?.isNA || !data.plannedNextDay?.react || data.plannedNextDay.react.length === 0;
+  const plannedTodayTopics = data.plannedToday?.topics || data.plannedToday?.react || [];
+  const plannedTodayTasks = data.plannedToday?.tasks || [];
+  const topicTitle = data.topicCategory || detectTopicCategory(plannedTodayTopics) || 'Topics Covered';
+
+  const completedTodayTopics = data.completedToday?.topics || data.completedToday?.react || [];
+  const completedTodayTasks = data.completedToday?.tasks || [];
+
+  const isNextDayNA = data.plannedNextDay?.isNA || (!data.plannedNextDay?.topics?.length && !data.plannedNextDay?.react?.length);
+  const nextDayTopics = data.plannedNextDay?.topics || data.plannedNextDay?.react || [];
+  const nextDayTasks = data.plannedNextDay?.tasks || [];
+  const nextDayTopicTitle = data.plannedNextDay?.topicCategory || detectTopicCategory(nextDayTopics) || topicTitle;
+
   const nextDayDisplay = isNextDayNA
     ? '<div style="text-align: center; font-weight: 500;">N/A</div>'
     : `
-    <div style="font-weight: bold; margin-bottom: 2px;">1. React:</div>
-    ${formatList(data.plannedNextDay.react)}
-    <div style="font-weight: bold; margin-top: 10px; margin-bottom: 2px;">2.Tasks:</div>
-    ${formatList(data.plannedNextDay.tasks)}
+    <div style="font-weight: bold; margin-bottom: 2px; color: #000000;">1. ${nextDayTopicTitle}:</div>
+    ${formatList(nextDayTopics)}
+    <div style="font-weight: bold; margin-top: 10px; margin-bottom: 2px; color: #000000;">2.Tasks:</div>
+    ${formatList(nextDayTasks)}
     `;
 
   return `
@@ -364,19 +480,19 @@ export function generateClientHtmlTable(data) {
     <tr>
       <td style="font-weight: bold; text-align: center; border: 1.5px solid #000000; background-color: #f2f2f2; color: #000000; vertical-align: middle;">Planned Tasks (Today)</td>
       <td style="border: 1.5px solid #000000; background-color: #ffffff; color: #000000; padding: 12px;">
-        <div style="font-weight: bold; margin-bottom: 2px; color: #000000;">1. React:</div>
-        ${formatList(data.plannedToday.react)}
+        <div style="font-weight: bold; margin-bottom: 2px; color: #000000;">1. ${topicTitle}:</div>
+        ${formatList(plannedTodayTopics)}
         <div style="font-weight: bold; margin-top: 10px; margin-bottom: 2px; color: #000000;">2.Tasks:</div>
-        ${formatList(data.plannedToday.tasks)}
+        ${formatList(plannedTodayTasks)}
       </td>
     </tr>
     <tr>
       <td style="font-weight: bold; text-align: center; border: 1.5px solid #000000; background-color: #f2f2f2; color: #000000; vertical-align: middle;">Completed Tasks (Today)</td>
       <td style="border: 1.5px solid #000000; background-color: #ffffff; color: #000000; padding: 12px;">
-        <div style="font-weight: bold; margin-bottom: 2px; color: #000000;">1. React:</div>
-        ${formatList(data.completedToday.react)}
+        <div style="font-weight: bold; margin-bottom: 2px; color: #000000;">1. ${topicTitle}:</div>
+        ${formatList(completedTodayTopics)}
         <div style="font-weight: bold; margin-top: 10px; margin-bottom: 2px; color: #000000;">2.Tasks:</div>
-        ${formatList(data.completedToday.tasks)}
+        ${formatList(completedTodayTasks)}
       </td>
     </tr>
     <tr>
@@ -403,10 +519,21 @@ export function generateClientHtmlTable(data) {
 
 export function generateClientTextFormat(data) {
   const renderBullets = (arr) => Array.isArray(arr) && arr.length > 0 ? arr.map(i => `  • ${i}`).join('\n') : '  • N/A';
-  const isNextDayNA = data.plannedNextDay?.isNA || !data.plannedNextDay?.react || data.plannedNextDay.react.length === 0;
+  const plannedTodayTopics = data.plannedToday?.topics || data.plannedToday?.react || [];
+  const plannedTodayTasks = data.plannedToday?.tasks || [];
+  const topicTitle = data.topicCategory || detectTopicCategory(plannedTodayTopics) || 'Topics Covered';
+
+  const completedTodayTopics = data.completedToday?.topics || data.completedToday?.react || [];
+  const completedTodayTasks = data.completedToday?.tasks || [];
+
+  const isNextDayNA = data.plannedNextDay?.isNA || (!data.plannedNextDay?.topics?.length && !data.plannedNextDay?.react?.length);
+  const nextDayTopics = data.plannedNextDay?.topics || data.plannedNextDay?.react || [];
+  const nextDayTasks = data.plannedNextDay?.tasks || [];
+  const nextDayTopicTitle = data.plannedNextDay?.topicCategory || detectTopicCategory(nextDayTopics) || topicTitle;
+
   const nextDayText = isNextDayNA
     ? '  N/A'
-    : `| 1. React:                                                                                         |\n${renderBullets(data.plannedNextDay.react)}\n| 2.Tasks:                                                                                          |\n${renderBullets(data.plannedNextDay.tasks)}`;
+    : `| 1. ${nextDayTopicTitle}:                                                                                         |\n${renderBullets(nextDayTopics)}\n| 2.Tasks:                                                                                          |\n${renderBullets(nextDayTasks)}`;
 
   return `Hi Nafisa Khanam Pathan mam and Prasanna Gunji Mam,
 
@@ -418,16 +545,16 @@ Please find below the task summary for today
 | Technology: ${data.technology || 'Web Development'}                                                                       |
 +---------------------------------------------------------------------------------------------------+
 | Planned Tasks (Today):                                                                            |
-| 1. React:                                                                                         |
-${renderBullets(data.plannedToday.react)}
+| 1. ${topicTitle}:                                                                                         |
+${renderBullets(plannedTodayTopics)}
 | 2.Tasks:                                                                                          |
-${renderBullets(data.plannedToday.tasks)}
+${renderBullets(plannedTodayTasks)}
 +---------------------------------------------------------------------------------------------------+
 | Completed Tasks (Today):                                                                          |
-| 1. React:                                                                                         |
-${renderBullets(data.completedToday.react)}
+| 1. ${topicTitle}:                                                                                         |
+${renderBullets(completedTodayTopics)}
 | 2.Tasks:                                                                                          |
-${renderBullets(data.completedToday.tasks)}
+${renderBullets(completedTodayTasks)}
 +---------------------------------------------------------------------------------------------------+
 | Pending Tasks:                                                                                    |
   N/A
@@ -440,7 +567,7 @@ ${nextDayText}
 +---------------------------------------------------------------------------------------------------+`.trim();
 }
 
-export function generateClientDraft(promptText, tone = 'professional', activeDay = 5) {
+export function generateClientDraft(promptText, tone = 'professional', activeDay = 5, customDays = null) {
   const lower = (promptText || '').toLowerCase();
   const now = new Date();
   const dd = String(now.getDate()).padStart(2, '0');
@@ -448,78 +575,12 @@ export function generateClientDraft(promptText, tone = 'professional', activeDay
   const yyyy = now.getFullYear();
 
   const isPastedCurriculum = (lower.includes('topics covered') || lower.includes('topics') || lower.includes('syllabus') || lower.includes('day 1') || lower.includes('day 2')) && (lower.includes('assigned') || lower.includes('task') || lower.includes('assignment'));
-  const isEOD = isPastedCurriculum || lower.includes('eod') || lower.includes('evening') || lower.includes('task summary') || lower.includes('daily') || lower.includes('task') || lower.includes('react');
+  const isEOD = isPastedCurriculum || lower.includes('eod') || lower.includes('evening') || lower.includes('task summary') || lower.includes('daily') || lower.includes('status report') || lower.includes('task') || lower.includes('react') || lower.includes('javascript');
   const isLeave = !isPastedCurriculum && (lower.includes('leave') || lower.includes('vacation') || lower.includes('sick') || lower.includes('casual') || lower.includes('pto') || lower.includes('off'));
 
   if (isPastedCurriculum) {
     const parsedDays = parseWeeklyEmailClient(promptText);
-    const targetDay = parsedDays.find(d => d.dayNumber === activeDay) || parsedDays[0] || defaultWeeklyDays[0];
-
-    const reactPrefixes = [
-      'Understood and applied',
-      'Implemented component-level',
-      'Mastered core workflow for',
-      'Practiced architecture and state handling for',
-      'Reviewed best practices and code syntax for'
-    ];
-    const taskPrefixes = [
-      'Successfully developed',
-      'Configured and verified',
-      'Built and integrated',
-      'Tested responsiveness and validation for',
-      'Staged and pushed clean updates for'
-    ];
-
-    const simplifyAction = (text, prefix) => {
-      let clean = (text || '')
-        .replace(/^(learn|study|review|understand|explore|master|read)\s+/i, '')
-        .replace(/^(build|create|develop|code|implement|setup|configure|design|write|construct|test)\s+/i, '')
-        .replace(/^(practiced|learned|mastered|implemented|configured|built|designed|tested|verified)\s+/i, '');
-      clean = clean.charAt(0).toLowerCase() + clean.slice(1);
-      return `${prefix} ${clean}`;
-    };
-
-    const compReact = (targetDay.topicsCovered || []).slice(0, 5).map((t, idx) => simplifyAction(t, reactPrefixes[idx % reactPrefixes.length]));
-    while (compReact.length < 5) {
-      compReact.push(defaultWeeklyDays[0].completedReact[compReact.length] || 'Reviewed component structure');
-    }
-
-    const compTasks = (targetDay.assignedTasks || []).slice(0, 5).map((t, idx) => simplifyAction(t, taskPrefixes[idx % taskPrefixes.length]));
-    while (compTasks.length < 5) {
-      compTasks.push(defaultWeeklyDays[0].completedTasks[compTasks.length] || 'Completed milestone task implementation');
-    }
-
-    const nextDay = parsedDays.find(d => d.dayNumber === (targetDay.dayNumber + 1));
-    const isNextDayNA = targetDay.dayNumber >= 5 || !nextDay;
-
-    const schedule = {
-      sheetId: 'sheet-pasted',
-      dayNumber: targetDay.dayNumber || 1,
-      dayName: targetDay.dayName || 'Workday',
-      isHoliday: false,
-      holidayReason: '',
-      syncSource: 'Pasted Custom Weekly Tasks',
-      senderEmail: 'prasanna.gunji@nybinfotech.com',
-      recipientLead: 'nafisa.khanam@nybinfotech.com',
-      technology: 'Web Development',
-      plannedToday: {
-        react: targetDay.topicsCovered || [],
-        tasks: targetDay.assignedTasks || []
-      },
-      completedToday: {
-        react: compReact,
-        tasks: compTasks
-      },
-      pending: 'N/A',
-      plannedNextDay: {
-        isNA: isNextDayNA,
-        nextDayName: !isNextDayNA ? nextDay.dayName : null,
-        react: !isNextDayNA ? (nextDay.topicsCovered || []) : [],
-        tasks: !isNextDayNA ? (nextDay.assignedTasks || []) : []
-      },
-      challenges: 'N/A'
-    };
-
+    const schedule = getClientTodaySchedule(activeDay, parsedDays);
     const subject = `Daily Status Report [${dd}-${mm}-${yyyy}]`;
     const htmlBody = generateClientHtmlTable(schedule);
     const body = generateClientTextFormat(schedule);
@@ -540,7 +601,7 @@ export function generateClientDraft(promptText, tone = 'professional', activeDay
   }
 
   if (isEOD) {
-    const schedule = getClientTodaySchedule(activeDay);
+    const schedule = getClientTodaySchedule(activeDay, customDays);
     const subject = `Daily Status Report [${dd}-${mm}-${yyyy}]`;
     const htmlBody = generateClientHtmlTable(schedule);
     const body = generateClientTextFormat(schedule);
@@ -657,7 +718,7 @@ Thank you.`;
 export function parseWeeklyEmailClient(rawText) {
   const text = (rawText || '').replace(/\r\n/g, '\n');
   const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-  const dayPattern = /(?:(?:Day\s*(\d+))|(Monday|Tuesday|Wednesday|Thursday|Friday))[:\s\-\(]*([^\n]*)/gi;
+  const dayPattern = /(?:(?:Day\s*(\d+))|(Monday|Tuesday|Wednesday|Thursday|Friday))[:\s\-\(–]*([^\n]*)/gi;
   const matches = [];
   let match;
 
@@ -678,7 +739,24 @@ export function parseWeeklyEmailClient(rawText) {
       const blockText = text.substring(curr.index, nextIndex);
 
       let dayNumber = curr.dayNumText ? parseInt(curr.dayNumText, 10) : (i + 1);
-      let dayName = curr.dayNameText || dayNames[dayNumber - 1] || `Day ${dayNumber}`;
+      let explicitName = curr.dayNameText;
+      if (!explicitName && curr.subHeader) {
+        const matchWeekday = curr.subHeader.match(/\b(Monday|Tuesday|Wednesday|Thursday|Friday)\b/i);
+        if (matchWeekday) explicitName = matchWeekday[1];
+      }
+      let dayName = explicitName || dayNames[dayNumber - 1] || `Day ${dayNumber}`;
+
+      if (!curr.dayNumText && curr.dayNameText) {
+        const foundIdx = dayNames.findIndex(d => d.toLowerCase() === curr.dayNameText.toLowerCase());
+        if (foundIdx !== -1) dayNumber = foundIdx + 1;
+      }
+
+      const isHoliday = /(holiday|closed|off\s*day|festival|leave)/i.test(curr.subHeader) || /(holiday|closed|off\s*day|festival)/i.test(blockText.substring(0, 80));
+      let holidayReason = '';
+      if (isHoliday) {
+        const reasonMatch = curr.subHeader.match(/(?:holiday|festival|off)[\s\-:]*([^\n\(\)]+)/i);
+        holidayReason = reasonMatch ? reasonMatch[1].trim() : 'Public / Company Holiday';
+      }
 
       const rawLines = blockText.split('\n').map(l => l.trim()).filter(Boolean);
       const topics = [];
@@ -687,16 +765,43 @@ export function parseWeeklyEmailClient(rawText) {
 
       for (const line of rawLines) {
         const unbolded = line.replace(/^\*\*|\*\*$/g, '').trim();
+        const lower = unbolded.toLowerCase();
+
+        // Skip the Day header line itself
+        if (/^(?:day\s*[-–]?\s*\d+|monday|tuesday|wednesday|thursday|friday)[\s:\-\(]*[^\n]*$/i.test(unbolded) &&
+            !lower.includes('topic') && !lower.includes('task')) {
+          continue;
+        }
+
+        // Stop at Mini Assignment / Mini Assessment / Final Practical Assignment
         const cleanedForHeader = unbolded.replace(/^[#*\-•\s]+/, '').trim();
-        const isMini = /^(?:\d+[\.\)]\s*)?(?:mini\s*[-–]?\s*(?:assessment|task|project)s?|assessment\s*questions?|assessments?|quiz(?:zes)?|evaluation|self\s*assessment)\b/i.test(cleanedForHeader);
+        const isMini = /^(?:\d+[\.\)]\s*)?(?:mini\s*[-–]?\s*(?:assignment|assessment|task|project|quiz)s?|assessment\s*questions?|assessments?|quiz(?:zes)?|evaluation|self\s*assessment|final\s*practical\s*assignment|recommended\s*project|project\s*requirements)\b/i.test(cleanedForHeader);
         if (isMini) break;
 
-        if (/^(?:\d+[\.\)]\s*)?(?:topics?\s*covered|react\s*topics?|react|syllabus)/i.test(unbolded)) {
+        // Header toggle (strictly anchor end to prevent mid-text matches like "Assignment Operators")
+        if (/^(?:\d+[\.\)]\s*)?(?:topics?\s*covered|react\s*topics?|javascript\s*topics?|react|javascript|topics?|syllabus)\s*[:\-]?\s*$/i.test(unbolded)) {
           currentMode = 'topics';
           continue;
         }
-        if (/^(?:\d+[\.\)]\s*)?(?:assigned?\s*tasks?|tasks?\s*assigned|tasks?|assignments?)/i.test(unbolded)) {
+        if (/^(?:\d+[\.\)]\s*)?(?:assigned?\s*tasks?|tasks?\s*assigned|tasks?|(?:daily\s*|weekly\s*)?assignments?)\s*[:\-]?\s*$/i.test(unbolded)) {
           currentMode = 'tasks';
+          continue;
+        }
+
+        // Inline combined check (e.g. "Topics Covered: Intro to React")
+        const inlineTopicMatch = unbolded.match(/^(?:(?:\d+[\.\)]\s*)?(?:topics?\s*covered|react\s*topics?)\s*[:\-])\s*(.+)$/i);
+        if (inlineTopicMatch) {
+          currentMode = 'topics';
+          const rest = inlineTopicMatch[1].trim();
+          if (rest && rest.length > 2) topics.push(rest);
+          continue;
+        }
+
+        const inlineTaskMatch = unbolded.match(/^(?:(?:\d+[\.\)]\s*)?(?:assigned?\s*tasks?|tasks?\s*assigned)\s*[:\-])\s*(.+)$/i);
+        if (inlineTaskMatch) {
+          currentMode = 'tasks';
+          const rest = inlineTaskMatch[1].trim();
+          if (rest && rest.length > 2) tasks.push(rest);
           continue;
         }
 
@@ -707,16 +812,21 @@ export function parseWeeklyEmailClient(rawText) {
         else tasks.push(cleanLine);
       }
 
+      const topicCat = detectTopicCategory(topics);
+      const compTopics = synthesizeClientCompletedPoints(topics, 'topics', topicCat);
+      const compTasks = synthesizeClientCompletedPoints(tasks, 'tasks', topicCat);
+
       parsedDays.push({
         id: `day-pasted-${dayNumber}`,
         dayNumber,
         dayName,
-        isHoliday: 0,
-        holidayReason: '',
-        topicsCovered: topics.length > 0 ? topics : [`React module ${dayNumber}`],
-        assignedTasks: tasks.length > 0 ? tasks : [`Assigned task ${dayNumber}`],
-        completedReact: topics.slice(0, 5),
-        completedTasks: tasks.slice(0, 5)
+        topicCategory: topicCat,
+        isHoliday: isHoliday ? 1 : 0,
+        holidayReason,
+        topicsCovered: topics.length > 0 ? topics : [`${topicCat} Module ${dayNumber}`],
+        assignedTasks: tasks.length > 0 ? tasks : [`Assigned Practical Task ${dayNumber}`],
+        completedReact: compTopics,
+        completedTasks: compTasks
       });
     }
   } else {
@@ -729,14 +839,14 @@ export function parseWeeklyEmailClient(rawText) {
     for (const line of rawLines) {
       const unbolded = line.replace(/^\*\*|\*\*$/g, '').trim();
       const cleanedForHeader = unbolded.replace(/^[#*\-•\s]+/, '').trim();
-      const isMini = /^(?:\d+[\.\)]\s*)?(?:mini\s*[-–]?\s*(?:assessment|task|project)s?|assessment\s*questions?|assessments?|quiz(?:zes)?|evaluation|self\s*assessment)\b/i.test(cleanedForHeader);
+      const isMini = /^(?:\d+[\.\)]\s*)?(?:mini\s*[-–]?\s*(?:assignment|assessment|task|project|quiz)s?|assessment\s*questions?|assessments?|quiz(?:zes)?|evaluation|self\s*assessment|final\s*practical\s*assignment|recommended\s*project|project\s*requirements)\b/i.test(cleanedForHeader);
       if (isMini) break;
 
-      if (/^(?:\d+[\.\)]\s*)?(?:topics?\s*covered|react\s*topics?|react|syllabus)/i.test(unbolded)) {
+      if (/^(?:\d+[\.\)]\s*)?(?:topics?\s*covered|react\s*topics?|javascript\s*topics?|react|javascript|topics?|syllabus)\s*[:\-]?\s*$/i.test(unbolded)) {
         currentMode = 'topics';
         continue;
       }
-      if (/^(?:\d+[\.\)]\s*)?(?:assigned?\s*tasks?|tasks?\s*assigned|tasks?|assignments?)/i.test(unbolded)) {
+      if (/^(?:\d+[\.\)]\s*)?(?:assigned?\s*tasks?|tasks?\s*assigned|tasks?|(?:daily\s*|weekly\s*)?assignments?)\s*[:\-]?\s*$/i.test(unbolded)) {
         currentMode = 'tasks';
         continue;
       }
@@ -749,16 +859,18 @@ export function parseWeeklyEmailClient(rawText) {
     }
 
     if (topics.length > 0 || tasks.length > 0) {
+      const topicCat = detectTopicCategory(topics);
       parsedDays.push({
         id: 'day-pasted-1',
         dayNumber: 1,
         dayName: 'Monday',
+        topicCategory: topicCat,
         isHoliday: 0,
         holidayReason: '',
-        topicsCovered: topics.length > 0 ? topics : ['Web Development module 1'],
-        assignedTasks: tasks.length > 0 ? tasks : ['Assigned practical tasks'],
-        completedReact: topics.slice(0, 5),
-        completedTasks: tasks.slice(0, 5)
+        topicsCovered: topics.length > 0 ? topics : [`${topicCat} Module 1`],
+        assignedTasks: tasks.length > 0 ? tasks : ['Assigned Practical Tasks'],
+        completedReact: synthesizeClientCompletedPoints(topics, 'topics', topicCat),
+        completedTasks: synthesizeClientCompletedPoints(tasks, 'tasks', topicCat)
       });
     }
   }
@@ -777,6 +889,7 @@ export function parseWeeklyEmailClient(rawText) {
         dayName: dayNames[d - 1] || `Day ${d}`,
         isHoliday: 0,
         holidayReason: '',
+        topicCategory: 'Web Development',
         topicsCovered: [`Web Development Module ${d}`],
         assignedTasks: [`Practical Milestone ${d}`],
         completedReact: [`Understood and applied module ${d}`],
@@ -784,6 +897,12 @@ export function parseWeeklyEmailClient(rawText) {
       });
     }
   }
+
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('mailcraft_weekly_schedule', JSON.stringify(finalDays));
+    }
+  } catch (e) {}
 
   return finalDays;
 }

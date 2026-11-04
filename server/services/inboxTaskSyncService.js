@@ -39,10 +39,26 @@ class InboxTaskSyncService {
   }
 
   /**
-   * Synthesizes EXACTLY 5 completed points in simple words from planned points.
+   * Intelligently detects the topic/curriculum category name (e.g. JavaScript, React, Node.js, HTML/CSS).
    */
-  synthesizeFiveCompletedPoints(plannedPoints = [], type = 'react') {
+  detectTopicCategory(topics = [], defaultName = 'Topics Covered') {
+    const combined = (Array.isArray(topics) ? topics.join(' ') : String(topics || '')).toLowerCase();
+    if (combined.includes('javascript') || combined.includes('js ') || combined.includes('es6') || combined.includes('closure') || combined.includes('scope') || combined.includes('variable')) return 'JavaScript';
+    if (combined.includes('react') || combined.includes('jsx') || combined.includes('hook') || combined.includes('redux')) return 'React';
+    if (combined.includes('node') || combined.includes('express')) return 'Node.js';
+    if (combined.includes('html') || combined.includes('css') || combined.includes('dom')) return 'HTML/CSS';
+    if (combined.includes('python')) return 'Python';
+    if (combined.includes('angular')) return 'Angular';
+    if (combined.includes('vue')) return 'Vue';
+    return defaultName;
+  }
+
+  /**
+   * Synthesizes EXACTLY 5 completed points in simple words derived directly from user's planned points.
+   */
+  synthesizeFiveCompletedPoints(plannedPoints = [], type = 'topics', categoryName = 'General') {
     const list = Array.isArray(plannedPoints) ? plannedPoints.map(p => String(p).trim()).filter(Boolean) : [];
+    const cat = categoryName !== 'General' ? categoryName : this.detectTopicCategory(list);
     
     // Helper to turn a planned bullet into a simple completed past-tense action
     const simplifyToAction = (text, prefix) => {
@@ -54,12 +70,12 @@ class InboxTaskSyncService {
       return `${prefix} ${clean}`;
     };
 
-    const reactPrefixes = [
+    const topicPrefixes = [
       'Understood and applied',
-      'Implemented component-level',
-      'Mastered core workflow for',
-      'Practiced architecture and state handling for',
-      'Reviewed best practices and code syntax for'
+      'Implemented core workflow for',
+      'Mastered syntax and usage for',
+      'Practiced practical execution of',
+      'Reviewed and validated implementation of'
     ];
 
     const taskPrefixes = [
@@ -70,37 +86,25 @@ class InboxTaskSyncService {
       'Staged and pushed clean updates for'
     ];
 
-    const prefixes = type === 'react' ? reactPrefixes : taskPrefixes;
+    const prefixes = (type === 'topics' || type === 'react') ? topicPrefixes : taskPrefixes;
     const completed = [];
 
-    // Use items from the planned list first
+    // Use items directly from the planned list first
     for (let i = 0; i < Math.min(list.length, 5); i++) {
       const p = list[i];
       const prefix = prefixes[i % prefixes.length];
       completed.push(simplifyToAction(p, prefix));
     }
 
-    // If fewer than 5 points were in the planned list, fill up to 5 points with relevant syntheses
+    // If fewer than 5 points were in the planned list, fill with variations of user's points
     while (completed.length < 5) {
       const idx = completed.length;
-      if (type === 'react') {
-        const fallbacks = [
-          'Understood React component lifecycle, props flow, and state updates',
-          'Mastered modular component breakdown and clean JSX syntax rules',
-          'Practiced unidirectional data flow and synthetic event handling',
-          'Eliminated console warnings and verified virtual DOM reconciliation',
-          'Reviewed code design patterns and discussed implementation with mentor'
-        ];
-        completed.push(fallbacks[idx]);
+      if (list.length > 0) {
+        const item = list[idx % list.length];
+        const prefix = prefixes[idx % prefixes.length];
+        completed.push(`${prefix} ${item.toLowerCase()}`);
       } else {
-        const fallbacks = [
-          'Setup clean project modularity and configured component hierarchy',
-          'Constructed user interface features matching design requirements',
-          'Implemented client-side logic and validated error handling paths',
-          'Tested feature workflow across browsers and inspected devtools logs',
-          'Committed and pushed verified progress files to NYBinfotech repository'
-        ];
-        completed.push(fallbacks[idx]);
+        completed.push(`Completed scheduled ${cat} practical exercises`);
       }
     }
 
@@ -205,26 +209,29 @@ class InboxTaskSyncService {
       }
     }
 
-    const plannedTodayReact = currentDayRow ? JSON.parse(currentDayRow.topics_covered || '[]') : [];
+    const plannedTodayTopics = currentDayRow ? JSON.parse(currentDayRow.topics_covered || '[]') : [];
     const plannedTodayTasks = currentDayRow ? JSON.parse(currentDayRow.assigned_tasks || '[]') : [];
 
-    // Ensure 5-point completed tasks in simple words
-    let completedTodayReact = currentDayRow ? JSON.parse(currentDayRow.completed_react || '[]') : [];
+    const topicCategory = this.detectTopicCategory(plannedTodayTopics);
+
+    // Ensure 5-point completed tasks in simple words derived directly from user's planned points
+    let completedTodayTopics = currentDayRow ? JSON.parse(currentDayRow.completed_react || '[]') : [];
     let completedTodayTasks = currentDayRow ? JSON.parse(currentDayRow.completed_tasks || '[]') : [];
 
-    if (completedTodayReact.length !== 5) {
-      completedTodayReact = this.synthesizeFiveCompletedPoints(plannedTodayReact, 'react');
+    if (completedTodayTopics.length !== 5) {
+      completedTodayTopics = this.synthesizeFiveCompletedPoints(plannedTodayTopics, 'topics', topicCategory);
     }
     if (completedTodayTasks.length !== 5) {
-      completedTodayTasks = this.synthesizeFiveCompletedPoints(plannedTodayTasks, 'tasks');
+      completedTodayTasks = this.synthesizeFiveCompletedPoints(plannedTodayTasks, 'tasks', topicCategory);
     }
 
     // Planned next day logic:
     // If next day exists, take topics and tasks as-is.
     // If today is Friday / last working day (nextWorkingDayRow is null), Next Day is N/A!
     const isNextDayNA = !nextWorkingDayRow;
-    const plannedNextDayReact = nextWorkingDayRow ? JSON.parse(nextWorkingDayRow.topics_covered || '[]') : [];
+    const plannedNextDayTopics = nextWorkingDayRow ? JSON.parse(nextWorkingDayRow.topics_covered || '[]') : [];
     const plannedNextDayTasks = nextWorkingDayRow ? JSON.parse(nextWorkingDayRow.assigned_tasks || '[]') : [];
+    const nextDayTopicCategory = nextWorkingDayRow ? this.detectTopicCategory(plannedNextDayTopics) : topicCategory;
 
     return {
       sheetId: sheet.id,
@@ -235,21 +242,27 @@ class InboxTaskSyncService {
       syncSource: sheet.sync_source,
       senderEmail: sheet.sender_email,
       recipientLead: sheet.recipient_lead,
-      technology: sheet.technology || 'Web Development',
+      technology: 'Web Development',
+      topicCategory,
+      nextDayTopicCategory,
       plannedToday: {
-        react: plannedTodayReact,
-        tasks: plannedTodayTasks
+        topics: plannedTodayTopics,
+        tasks: plannedTodayTasks,
+        react: plannedTodayTopics
       },
       completedToday: {
-        react: completedTodayReact,
-        tasks: completedTodayTasks
+        topics: completedTodayTopics,
+        tasks: completedTodayTasks,
+        react: completedTodayTopics
       },
       pending: 'N/A',
       plannedNextDay: {
         isNA: isNextDayNA,
         nextDayName: nextWorkingDayRow ? nextWorkingDayRow.day_name : null,
-        react: plannedNextDayReact,
-        tasks: plannedNextDayTasks
+        topicCategory: nextDayTopicCategory,
+        topics: plannedNextDayTopics,
+        tasks: plannedNextDayTasks,
+        react: plannedNextDayTopics
       },
       challenges: 'N/A'
     };
@@ -273,7 +286,7 @@ class InboxTaskSyncService {
     const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     
     // Split into Day blocks using regex
-    const dayPattern = /(?:(?:Day\s*(\d+))|(Monday|Tuesday|Wednesday|Thursday|Friday))[:\s\-\(]*([^\n]*)/gi;
+    const dayPattern = /(?:(?:Day\s*(\d+))|(Monday|Tuesday|Wednesday|Thursday|Friday))[:\s\-\(–]*([^\n]*)/gi;
     const matches = [];
     let match;
 
@@ -295,7 +308,12 @@ class InboxTaskSyncService {
         const blockText = text.substring(curr.index, nextIndex);
 
         let dayNumber = curr.dayNumText ? parseInt(curr.dayNumText, 10) : (i + 1);
-        let dayName = curr.dayNameText || dayNames[dayNumber - 1] || `Day ${dayNumber}`;
+        let explicitName = curr.dayNameText;
+        if (!explicitName && curr.subHeader) {
+          const matchWeekday = curr.subHeader.match(/\b(Monday|Tuesday|Wednesday|Thursday|Friday)\b/i);
+          if (matchWeekday) explicitName = matchWeekday[1];
+        }
+        let dayName = explicitName || dayNames[dayNumber - 1] || `Day ${dayNumber}`;
 
         if (!curr.dayNumText && curr.dayNameText) {
           const foundIdx = dayNames.findIndex(d => d.toLowerCase() === curr.dayNameText.toLowerCase());
@@ -310,11 +328,12 @@ class InboxTaskSyncService {
           holidayReason = reasonMatch ? reasonMatch[1].trim() : 'Public / Company Holiday';
         }
 
-        // Extract Topics (React) vs Tasks
+        // Extract Topics vs Tasks
         const { topics, tasks } = this.extractTopicsAndTasksFromBlock(blockText);
+        const topicCat = this.detectTopicCategory(topics);
 
-        const completedReact = this.synthesizeFiveCompletedPoints(topics, 'react');
-        const completedTasks = this.synthesizeFiveCompletedPoints(tasks, 'tasks');
+        const completedReact = this.synthesizeFiveCompletedPoints(topics, 'topics', topicCat);
+        const completedTasks = this.synthesizeFiveCompletedPoints(tasks, 'tasks', topicCat);
 
         parsedDays.push({
           dayNumber,
@@ -472,7 +491,7 @@ class InboxTaskSyncService {
       // 0. STOP reading this day's block as soon as Mini Assessment or Mini Task section is reached!
       // As requested: ignore mini assessment and mini task, discarding everything from that point downward for the day.
       const cleanedForHeader = unbolded.replace(/^[#*\-•\s]+/, '').trim();
-      const isMiniAssessmentOrTask = /^(?:\d+[\.\)]\s*)?(?:mini\s*[-–]?\s*(?:assessment|task|project)s?|assessment\s*questions?|assessments?|quiz(?:zes)?|evaluation|self\s*assessment)\b/i.test(cleanedForHeader);
+      const isMiniAssessmentOrTask = /^(?:\d+[\.\)]\s*)?(?:mini\s*[-–]?\s*(?:assignment|assessment|task|project|quiz)s?|assessment\s*questions?|assessments?|quiz(?:zes)?|evaluation|self\s*assessment|final\s*practical\s*assignment|recommended\s*project)\b/i.test(cleanedForHeader);
       if (isMiniAssessmentOrTask) {
         break; // Stop parsing this day completely, ignore mini assessment and everything below it
       }
@@ -509,12 +528,12 @@ class InboxTaskSyncService {
       }
 
       // 2. Check for pure section headers (switches mode and consumes the header line)
-      if (/^(?:\d+[\.\)]\s*)?(?:topics?\s*covered|react\s*topics?|react|syllabus|curriculum|learning\s*objectives?)[:\s\-]*$/i.test(unbolded)) {
+      if (/^(?:\d+[\.\)]\s*)?(?:topics?\s*covered|react\s*topics?|javascript\s*topics?|react|javascript|syllabus|curriculum|learning\s*objectives?)[:\s\-]*$/i.test(unbolded)) {
         currentMode = 'topics';
         continue;
       }
 
-      if (/^(?:\d+[\.\)]\s*)?(?:assigned?\s*tasks?|tasks?\s*assigned|tasks?|assignments?|work\s*assigned|deliverables?|practical\s*tasks?)[:\s\-]*$/i.test(unbolded)) {
+      if (/^(?:\d+[\.\)]\s*)?(?:assigned?\s*tasks?|tasks?\s*assigned|tasks?|(?:daily\s*|weekly\s*)?assignments?|work\s*assigned|deliverables?|practical\s*tasks?)[:\s\-]*$/i.test(unbolded)) {
         currentMode = 'tasks';
         continue;
       }
@@ -594,15 +613,26 @@ class InboxTaskSyncService {
       ? '<div style="text-align: center; font-weight: 500;">N/A</div>'
       : formatList(data.challenges);
 
+    const plannedTodayTopics = data.plannedToday?.topics || data.plannedToday?.react || [];
+    const plannedTodayTasks = data.plannedToday?.tasks || [];
+    const topicTitle = data.topicCategory || this.detectTopicCategory(plannedTodayTopics) || 'Topics Covered';
+
+    const completedTodayTopics = data.completedToday?.topics || data.completedToday?.react || [];
+    const completedTodayTasks = data.completedToday?.tasks || [];
+
+    const isNextDayNA = data.plannedNextDay?.isNA || (!data.plannedNextDay?.topics?.length && !data.plannedNextDay?.react?.length);
+    const nextDayTopics = data.plannedNextDay?.topics || data.plannedNextDay?.react || [];
+    const nextDayTasks = data.plannedNextDay?.tasks || [];
+    const nextDayTopicTitle = data.plannedNextDay?.topicCategory || this.detectTopicCategory(nextDayTopics) || topicTitle;
+
     // Planned Next Day: If isNA or empty, render clean N/A
-    const isNextDayNA = data.plannedNextDay?.isNA || !data.plannedNextDay?.react || data.plannedNextDay.react.length === 0;
     const nextDayDisplay = isNextDayNA
       ? '<div style="text-align: center; font-weight: 500;">N/A</div>'
       : `
-      <div style="font-weight: bold; margin-bottom: 2px;">1. React:</div>
-      ${formatList(data.plannedNextDay.react)}
-      <div style="font-weight: bold; margin-top: 10px; margin-bottom: 2px;">2.Tasks:</div>
-      ${formatList(data.plannedNextDay.tasks)}
+      <div style="font-weight: bold; margin-bottom: 2px; color: #000000;">1. ${nextDayTopicTitle}:</div>
+      ${formatList(nextDayTopics)}
+      <div style="font-weight: bold; margin-top: 10px; margin-bottom: 2px; color: #000000;">2.Tasks:</div>
+      ${formatList(nextDayTasks)}
       `;
 
     return `
@@ -619,19 +649,19 @@ class InboxTaskSyncService {
     <tr>
       <td style="font-weight: bold; text-align: center; border: 1.5px solid #000000; background-color: #f2f2f2; color: #000000; vertical-align: middle;">Planned Tasks (Today)</td>
       <td style="border: 1.5px solid #000000; background-color: #ffffff; color: #000000; padding: 12px;">
-        <div style="font-weight: bold; margin-bottom: 2px; color: #000000;">1. React:</div>
-        ${formatList(data.plannedToday.react)}
+        <div style="font-weight: bold; margin-bottom: 2px; color: #000000;">1. ${topicTitle}:</div>
+        ${formatList(plannedTodayTopics)}
         <div style="font-weight: bold; margin-top: 10px; margin-bottom: 2px; color: #000000;">2.Tasks:</div>
-        ${formatList(data.plannedToday.tasks)}
+        ${formatList(plannedTodayTasks)}
       </td>
     </tr>
     <tr>
       <td style="font-weight: bold; text-align: center; border: 1.5px solid #000000; background-color: #f2f2f2; color: #000000; vertical-align: middle;">Completed Tasks (Today)</td>
       <td style="border: 1.5px solid #000000; background-color: #ffffff; color: #000000; padding: 12px;">
-        <div style="font-weight: bold; margin-bottom: 2px; color: #000000;">1. React:</div>
-        ${formatList(data.completedToday.react)}
+        <div style="font-weight: bold; margin-bottom: 2px; color: #000000;">1. ${topicTitle}:</div>
+        ${formatList(completedTodayTopics)}
         <div style="font-weight: bold; margin-top: 10px; margin-bottom: 2px; color: #000000;">2.Tasks:</div>
-        ${formatList(data.completedToday.tasks)}
+        ${formatList(completedTodayTasks)}
       </td>
     </tr>
     <tr>
@@ -668,10 +698,21 @@ class InboxTaskSyncService {
       ? 'N/A'
       : data.challenges.map(i => `  • ${i}`).join('\n');
 
-    const isNextDayNA = data.plannedNextDay?.isNA || !data.plannedNextDay?.react || data.plannedNextDay.react.length === 0;
+    const plannedTodayTopics = data.plannedToday?.topics || data.plannedToday?.react || [];
+    const plannedTodayTasks = data.plannedToday?.tasks || [];
+    const topicTitle = data.topicCategory || this.detectTopicCategory(plannedTodayTopics) || 'Topics Covered';
+
+    const completedTodayTopics = data.completedToday?.topics || data.completedToday?.react || [];
+    const completedTodayTasks = data.completedToday?.tasks || [];
+
+    const isNextDayNA = data.plannedNextDay?.isNA || (!data.plannedNextDay?.topics?.length && !data.plannedNextDay?.react?.length);
+    const nextDayTopics = data.plannedNextDay?.topics || data.plannedNextDay?.react || [];
+    const nextDayTasks = data.plannedNextDay?.tasks || [];
+    const nextDayTopicTitle = data.plannedNextDay?.topicCategory || this.detectTopicCategory(nextDayTopics) || topicTitle;
+
     const nextDayText = isNextDayNA
       ? '  N/A'
-      : `| 1. React:                                                                                         |\n${renderBullets(data.plannedNextDay.react)}\n| 2.Tasks:                                                                                          |\n${renderBullets(data.plannedNextDay.tasks)}`;
+      : `| 1. ${nextDayTopicTitle}:                                                                                         |\n${renderBullets(nextDayTopics)}\n| 2.Tasks:                                                                                          |\n${renderBullets(nextDayTasks)}`;
 
     return `Hi Nafisa Khanam Pathan mam and Prasanna Gunji Mam,
 
@@ -683,16 +724,16 @@ Please find below the task summary for today
 | Technology: ${data.technology || 'Web Development'}                                                                       |
 +---------------------------------------------------------------------------------------------------+
 | Planned Tasks (Today):                                                                            |
-| 1. React:                                                                                         |
-${renderBullets(data.plannedToday.react)}
+| 1. ${topicTitle}:                                                                                         |
+${renderBullets(plannedTodayTopics)}
 | 2.Tasks:                                                                                          |
-${renderBullets(data.plannedToday.tasks)}
+${renderBullets(plannedTodayTasks)}
 +---------------------------------------------------------------------------------------------------+
 | Completed Tasks (Today):                                                                          |
-| 1. React:                                                                                         |
-${renderBullets(data.completedToday.react)}
+| 1. ${topicTitle}:                                                                                         |
+${renderBullets(completedTodayTopics)}
 | 2.Tasks:                                                                                          |
-${renderBullets(data.completedToday.tasks)}
+${renderBullets(completedTodayTasks)}
 +---------------------------------------------------------------------------------------------------+
 | Pending Tasks:                                                                                    |
   ${pendingText}

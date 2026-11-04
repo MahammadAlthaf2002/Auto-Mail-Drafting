@@ -11,6 +11,7 @@ import {
   defaultUser, 
   defaultContacts, 
   defaultPresetGroups, 
+  defaultWeeklyDays,
   getClientTodaySchedule,
   generateClientDraft,
   generateClientHtmlTable,
@@ -45,6 +46,25 @@ export default function App() {
   const [allContacts, setAllContacts] = useState(defaultContacts);
   const [presetGroups, setPresetGroups] = useState(defaultPresetGroups);
   const [mailboxData, setMailboxData] = useState({ drafts: [], sent: [], scheduled: [], stats: {} });
+  const [weeklySchedule, setWeeklySchedule] = useState(() => {
+    try {
+      const stored = localStorage.getItem('mailcraft_weekly_schedule');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return defaultWeeklyDays;
+  });
+
+  const handleScheduleUpdated = (days) => {
+    if (Array.isArray(days) && days.length > 0) {
+      setWeeklySchedule(days);
+      try {
+        localStorage.setItem('mailcraft_weekly_schedule', JSON.stringify(days));
+      } catch (e) {}
+    }
+  };
 
   // Email Composer States
   const [prompt, setPrompt] = useState('');
@@ -163,7 +183,7 @@ export default function App() {
 
       // Fallback: Autonomous client-side generator ensures Vercel / static hosting works flawlessly
       if (!data) {
-        data = generateClientDraft(activePrompt, tone, 5);
+        data = generateClientDraft(activePrompt, tone, 5, weeklySchedule);
       }
 
       if (data && data.success && data.draft) {
@@ -176,11 +196,12 @@ export default function App() {
         if (data.draft.suggestedTo?.length > 0) setSelectedTo(data.draft.suggestedTo);
         if (data.draft.suggestedCc?.length > 0) setSelectedCc(data.draft.suggestedCc);
 
+        const catName = data.draft.scheduleData?.topicCategory || 'Topics';
         showToast(
           data.draft.isEODTable ? 'Daily EOD Task Table Generated!' : 'Email draft generated!',
           'success',
           data.draft.isEODTable 
-            ? 'Populated 5 React points & 5 Task points for Web Development. Auto-addressed to Prasanna Gunji & Nafisa Khanam Pathan.'
+            ? `Populated 5 ${catName} points & 5 Task points for Web Development. Auto-addressed to Prasanna Gunji & Nafisa Khanam Pathan.`
             : `Auto-filled subject, body, and selected ${data.draft.suggestedTo.length} TO and ${data.draft.suggestedCc.length} CC recipients.`
         );
       } else {
@@ -201,9 +222,10 @@ export default function App() {
       setPrompt(leavePrompt);
       handleGenerate(leavePrompt);
     } else if (type === 'eod') {
-      const eodPrompt = 'Draft Daily Evening EOD Task Summary for Prasanna Gunji and Nafisa Khanam Pathan with Web Development React and Tasks table';
-      setPrompt(eodPrompt);
-      handleGenerate(eodPrompt);
+      const todayDate = new Date();
+      let currentDayOfWeek = todayDate.getDay(); // 0 Sun, 1 Mon ... 5 Fri, 6 Sat
+      if (currentDayOfWeek === 0 || currentDayOfWeek === 6) currentDayOfWeek = 5;
+      handleSelectDayForEOD(currentDayOfWeek, weeklySchedule);
     } else if (type === 'project') {
       const projPrompt = 'Draft project recommendation: proposed architectural performance upgrades to reduce API latency and enhance staging reliability for Q4.';
       setPrompt(projPrompt);
@@ -242,34 +264,31 @@ export default function App() {
   };
 
   // Select a specific day (Day 1..5) from the Weekly Chart for EOD table
-  const handleSelectDayForEOD = async (dayNumber) => {
+  const handleSelectDayForEOD = async (selectedDayOrNumber, allDaysList = null) => {
     try {
-      let schedule = null;
-      let htmlTable = '';
-      let bodyText = '';
+      const daysList = (Array.isArray(allDaysList) && allDaysList.length > 0) ? allDaysList : weeklySchedule;
+      const dayNumber = typeof selectedDayOrNumber === 'object' && selectedDayOrNumber !== null 
+        ? Number(selectedDayOrNumber.dayNumber || 1) 
+        : Number(selectedDayOrNumber || 1);
 
-      try {
-        const res = await fetch('/api/emails/set-active-eod-day', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dayNumber })
-        });
-        if (res && res.ok) {
-          const data = await res.json().catch(() => null);
-          if (data && data.success && data.schedule) {
-            schedule = data.schedule;
-            htmlTable = data.htmlTable;
-            bodyText = data.body;
-          }
-        }
-      } catch (err) {}
-
-      // Fallback: Autonomous client calculation if server is offline
-      if (!schedule) {
-        schedule = getClientTodaySchedule(dayNumber);
-        htmlTable = generateClientHtmlTable(schedule);
-        bodyText = generateClientTextFormat(schedule);
+      if (Array.isArray(allDaysList) && allDaysList.length > 0) {
+        setWeeklySchedule(allDaysList);
+        try {
+          localStorage.setItem('mailcraft_weekly_schedule', JSON.stringify(allDaysList));
+        } catch (e) {}
       }
+
+      // Always calculate using client schedule (respecting user's active pasted curriculum)
+      const schedule = getClientTodaySchedule(dayNumber, daysList);
+      const htmlTable = generateClientHtmlTable(schedule);
+      const bodyText = generateClientTextFormat(schedule);
+
+      // In background, also sync with local server if running
+      fetch('/api/emails/set-active-eod-day', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dayNumber })
+      }).catch(() => {});
 
       setScheduleData(schedule);
       setHtmlBody(htmlTable);
@@ -288,10 +307,14 @@ export default function App() {
       const nafisa = allContacts.find(c => c.email.includes('nafisa')) || defaultContacts[1];
       setSelectedTo([prasanna, nafisa]);
 
+      const catName = schedule?.topicCategory || 'Topics';
+      const topicsCount = schedule?.plannedToday?.topics?.length || schedule?.plannedToday?.react?.length || 0;
+      const tasksCount = schedule?.plannedToday?.tasks?.length || 0;
+
       showToast(
         `Loaded Day ${dayNumber} (${schedule?.activeDayName || 'Workday'}) for EOD!`,
         'success',
-        `Planned: ${schedule?.plannedToday?.react?.length || 0} React & ${schedule?.plannedToday?.tasks?.length || 0} Tasks. Completed: 5 points.`
+        `Planned: ${topicsCount} ${catName} & ${tasksCount} Tasks. Completed: 5 points.`
       );
     } catch (err) {
       console.error('Error selecting day for EOD:', err);
@@ -1111,7 +1134,8 @@ export default function App() {
         isOpen={weeklyChartModalOpen}
         onClose={() => setWeeklyChartModalOpen(false)}
         onSelectDayForEOD={handleSelectDayForEOD}
-        currentActiveDay={scheduleData?.dayNumber || 5}
+        onScheduleUpdated={handleScheduleUpdated}
+        currentActiveDay={scheduleData?.activeDayNumber || 5}
         initialTab={weeklyChartInitialTab}
       />
 

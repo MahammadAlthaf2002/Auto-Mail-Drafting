@@ -12,6 +12,17 @@ export default function EODTablePreview({
 
   const { plannedToday, completedToday, pending, plannedNextDay, challenges, dayName } = scheduleData;
 
+  const plannedTodayTopics = plannedToday?.topics || plannedToday?.react || [];
+  const plannedTodayTasks = plannedToday?.tasks || [];
+  const topicTitle = scheduleData.topicCategory || (Array.isArray(plannedTodayTopics) && plannedTodayTopics.some(t => String(t).toLowerCase().includes('javascript')) ? 'JavaScript' : (Array.isArray(plannedTodayTopics) && plannedTodayTopics.some(t => String(t).toLowerCase().includes('react')) ? 'React' : 'Topics Covered'));
+
+  const completedTodayTopics = completedToday?.topics || completedToday?.react || [];
+  const completedTodayTasks = completedToday?.tasks || [];
+
+  const nextDayTopics = plannedNextDay?.topics || plannedNextDay?.react || [];
+  const nextDayTasks = plannedNextDay?.tasks || [];
+  const nextDayTopicTitle = plannedNextDay?.topicCategory || (Array.isArray(nextDayTopics) && nextDayTopics.some(t => String(t).toLowerCase().includes('javascript')) ? 'JavaScript' : (Array.isArray(nextDayTopics) && nextDayTopics.some(t => String(t).toLowerCase().includes('react')) ? 'React' : topicTitle));
+
   const handleCopyRichTable = async () => {
     try {
       const container = document.getElementById('eod-table-container');
@@ -158,9 +169,9 @@ export default function EODTablePreview({
                 }}
               >
                 <div style={{ marginBottom: '8px' }}>
-                  <p style={{ fontWeight: 'bold', color: '#000000', margin: '0 0 4px 0' }}>1. React:</p>
+                  <p style={{ fontWeight: 'bold', color: '#000000', margin: '0 0 4px 0' }}>1. {topicTitle}:</p>
                   <ul style={{ margin: '0 0 0 18px', padding: 0, listStyleType: 'disc', color: '#000000' }}>
-                    {plannedToday.react.map((item, idx) => (
+                    {plannedTodayTopics.map((item, idx) => (
                       <li key={idx} style={{ marginBottom: '4px', lineHeight: '1.5', color: '#000000' }}>{item}</li>
                     ))}
                   </ul>
@@ -168,7 +179,7 @@ export default function EODTablePreview({
                 <div style={{ marginTop: '8px' }}>
                   <p style={{ fontWeight: 'bold', color: '#000000', margin: '0 0 4px 0' }}>2.Tasks:</p>
                   <ul style={{ margin: '0 0 0 18px', padding: 0, listStyleType: 'disc', color: '#000000' }}>
-                    {plannedToday.tasks.map((item, idx) => (
+                    {plannedTodayTasks.map((item, idx) => (
                       <li key={idx} style={{ marginBottom: '4px', lineHeight: '1.5', color: '#000000' }}>{item}</li>
                     ))}
                   </ul>
@@ -200,9 +211,9 @@ export default function EODTablePreview({
                 }}
               >
                 <div style={{ marginBottom: '8px' }}>
-                  <p style={{ fontWeight: 'bold', color: '#000000', margin: '0 0 4px 0' }}>1. React:</p>
+                  <p style={{ fontWeight: 'bold', color: '#000000', margin: '0 0 4px 0' }}>1. {topicTitle}:</p>
                   <ul style={{ margin: '0 0 0 18px', padding: 0, listStyleType: 'disc', color: '#000000' }}>
-                    {completedToday.react.map((item, idx) => (
+                    {completedTodayTopics.map((item, idx) => (
                       <li key={idx} style={{ marginBottom: '4px', lineHeight: '1.5', color: '#000000' }}>{item}</li>
                     ))}
                   </ul>
@@ -210,7 +221,7 @@ export default function EODTablePreview({
                 <div style={{ marginTop: '8px' }}>
                   <p style={{ fontWeight: 'bold', color: '#000000', margin: '0 0 4px 0' }}>2.Tasks:</p>
                   <ul style={{ margin: '0 0 0 18px', padding: 0, listStyleType: 'disc', color: '#000000' }}>
-                    {completedToday.tasks.map((item, idx) => (
+                    {completedTodayTasks.map((item, idx) => (
                       <li key={idx} style={{ marginBottom: '4px', lineHeight: '1.5', color: '#000000' }}>{item}</li>
                     ))}
                   </ul>
@@ -277,19 +288,19 @@ export default function EODTablePreview({
                   padding: '12px', 
                   backgroundColor: '#ffffff', 
                   color: '#000000', 
-                  textAlign: plannedNextDay?.isNA || !plannedNextDay?.react || plannedNextDay.react.length === 0 ? 'center' : 'left',
-                  fontWeight: plannedNextDay?.isNA || !plannedNextDay?.react || plannedNextDay.react.length === 0 ? '500' : 'normal',
+                  textAlign: plannedNextDay?.isNA || (!nextDayTopics.length && !nextDayTasks.length) ? 'center' : 'left',
+                  fontWeight: plannedNextDay?.isNA || (!nextDayTopics.length && !nextDayTasks.length) ? '500' : 'normal',
                   verticalAlign: 'middle'
                 }}
               >
-                {plannedNextDay?.isNA || !plannedNextDay?.react || plannedNextDay.react.length === 0 ? (
+                {plannedNextDay?.isNA || (!nextDayTopics.length && !nextDayTasks.length) ? (
                   <span>N/A</span>
                 ) : (
                   <>
                     <div style={{ marginBottom: '8px' }}>
-                      <p style={{ fontWeight: 'bold', color: '#000000', margin: '0 0 4px 0' }}>1. React:</p>
+                      <p style={{ fontWeight: 'bold', color: '#000000', margin: '0 0 4px 0' }}>1. {nextDayTopicTitle}:</p>
                       <ul style={{ margin: '0 0 0 18px', padding: 0, listStyleType: 'disc', color: '#000000' }}>
-                        {plannedNextDay.react.map((item, idx) => (
+                        {nextDayTopics.map((item, idx) => (
                           <li key={idx} style={{ marginBottom: '4px', lineHeight: '1.5', color: '#000000' }}>{item}</li>
                         ))}
                       </ul>
@@ -297,7 +308,7 @@ export default function EODTablePreview({
                     <div style={{ marginTop: '8px' }}>
                       <p style={{ fontWeight: 'bold', color: '#000000', margin: '0 0 4px 0' }}>2.Tasks:</p>
                       <ul style={{ margin: '0 0 0 18px', padding: 0, listStyleType: 'disc', color: '#000000' }}>
-                        {plannedNextDay.tasks.map((item, idx) => (
+                        {nextDayTasks.map((item, idx) => (
                           <li key={idx} style={{ marginBottom: '4px', lineHeight: '1.5', color: '#000000' }}>{item}</li>
                         ))}
                       </ul>

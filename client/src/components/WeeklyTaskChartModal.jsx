@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { defaultWeeklyDays, parseWeeklyEmailClient } from '../services/clientEmailService';
+import { defaultWeeklyDays, parseWeeklyEmailClient, detectTopicCategory } from '../services/clientEmailService';
 import { 
   X, 
   RefreshCw, 
@@ -19,6 +19,7 @@ export default function WeeklyTaskChartModal({
   isOpen,
   onClose,
   onSelectDayForEOD,
+  onScheduleUpdated,
   currentActiveDay = 5,
   initialTab = 'chart'
 }) {
@@ -51,7 +52,21 @@ export default function WeeklyTaskChartModal({
           return;
         }
       }
-      // Fallback to client-side curriculum data
+      
+      // Fallback: check localStorage for custom pasted schedule first
+      let activeDays = defaultWeeklyDays;
+      let syncLabel = 'Standard Curriculum & Prasanna Mam Email Format';
+      try {
+        const stored = localStorage.getItem('mailcraft_weekly_schedule');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            activeDays = parsed;
+            syncLabel = 'Saved Custom Schedule (Prasanna Mam)';
+          }
+        }
+      } catch (e) {}
+
       setChartData({
         success: true,
         sheet: {
@@ -60,17 +75,30 @@ export default function WeeklyTaskChartModal({
           sender: 'prasanna.gunji@nybinfotech.com',
           recipient: 'nafisa.khanam@nybinfotech.com',
           technology: 'Web Development',
-          syncSource: 'Standard Curriculum & Prasanna Mam Email Format',
-          totalDays: defaultWeeklyDays.length,
+          syncSource: syncLabel,
+          totalDays: activeDays.length,
           activeDayNumber: currentActiveDay || 5,
           activeDayName: 'Today',
           updatedAt: new Date().toISOString()
         },
-        syncSource: 'Standard Curriculum & Prasanna Mam Email Format',
-        days: defaultWeeklyDays
+        syncSource: syncLabel,
+        days: activeDays
       });
     } catch (err) {
       console.warn('Fetch weekly chart error, using fallback:', err);
+      let activeDays = defaultWeeklyDays;
+      let syncLabel = 'Standard Curriculum & Prasanna Mam Email Format';
+      try {
+        const stored = localStorage.getItem('mailcraft_weekly_schedule');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            activeDays = parsed;
+            syncLabel = 'Saved Custom Schedule (Prasanna Mam)';
+          }
+        }
+      } catch (e) {}
+
       setChartData({
         success: true,
         sheet: {
@@ -79,14 +107,14 @@ export default function WeeklyTaskChartModal({
           sender: 'prasanna.gunji@nybinfotech.com',
           recipient: 'nafisa.khanam@nybinfotech.com',
           technology: 'Web Development',
-          syncSource: 'Standard Curriculum & Prasanna Mam Email Format',
-          totalDays: defaultWeeklyDays.length,
+          syncSource: syncLabel,
+          totalDays: activeDays.length,
           activeDayNumber: currentActiveDay || 5,
           activeDayName: 'Today',
           updatedAt: new Date().toISOString()
         },
-        syncSource: 'Standard Curriculum & Prasanna Mam Email Format',
-        days: defaultWeeklyDays
+        syncSource: syncLabel,
+        days: activeDays
       });
     } finally {
       setIsLoading(false);
@@ -115,7 +143,7 @@ export default function WeeklyTaskChartModal({
         success: true,
         sheet: {
           id: 'sheet-offline',
-          title: 'React & Frontend Fundamentals (Curated)',
+          title: 'Web Development Curriculum (Curated)',
           sender: 'prasanna.gunji@nybinfotech.com',
           recipient: 'nafisa.khanam@nybinfotech.com',
           technology: 'Web Development',
@@ -137,7 +165,7 @@ export default function WeeklyTaskChartModal({
         success: true,
         sheet: {
           id: 'sheet-offline',
-          title: 'React & Frontend Fundamentals (Curated)',
+          title: 'Web Development Curriculum (Curated)',
           sender: 'prasanna.gunji@nybinfotech.com',
           recipient: 'nafisa.khanam@nybinfotech.com',
           technology: 'Web Development',
@@ -164,79 +192,55 @@ export default function WeeklyTaskChartModal({
     setIsParsing(true);
     setStatusMessage(null);
     try {
-      const res = await fetch('/api/emails/parse-weekly-email', {
+      // 1. Parse client-side immediately - guarantees zero 404s on Vercel and instant response
+      const parsedDays = parseWeeklyEmailClient(pasteText);
+      try {
+        localStorage.setItem('mailcraft_weekly_schedule', JSON.stringify(parsedDays));
+      } catch (e) {}
+
+      // 2. Also attempt backend parse in background if server is present
+      fetch('/api/emails/parse-weekly-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           emailText: pasteText,
           syncSource: 'Pasted Prasanna Mam Email'
         })
+      }).catch(() => {});
+
+      const newChartData = {
+        success: true,
+        sheet: {
+          id: `sheet-client-${Date.now()}`,
+          title: 'Web Development Weekly Tasks (Updated)',
+          sender: 'prasanna.gunji@nybinfotech.com',
+          recipient: 'nafisa.khanam@nybinfotech.com',
+          technology: 'Web Development',
+          syncSource: 'Pasted Prasanna Mam Email',
+          totalDays: parsedDays.length,
+          activeDayNumber: currentActiveDay || 1,
+          activeDayName: 'Today',
+          updatedAt: new Date().toISOString()
+        },
+        syncSource: 'Pasted Prasanna Mam Email',
+        days: parsedDays
+      };
+      setChartData(newChartData);
+      setActiveTab('chart');
+      setPasteText('');
+      setStatusMessage({
+        type: 'success',
+        text: `Successfully parsed ${parsedDays.length} working days from Prasanna Mam's email!`
       });
-      const contentType = res.headers.get('content-type');
-      if (res.ok && contentType && contentType.includes('application/json')) {
-        const data = await res.json();
-        if (data.success && data.days) {
-          setChartData(data);
-          setActiveTab('chart');
-          setPasteText('');
-          setStatusMessage({
-            type: 'success',
-            text: `Successfully parsed ${data.days.length} working days from Prasanna Mam's email!`
-          });
-          return;
-        }
+
+      if (typeof onScheduleUpdated === 'function') {
+        onScheduleUpdated(parsedDays);
       }
-      // Fallback: parse client-side
-      const parsedDays = parseWeeklyEmailClient(pasteText);
-      const newChartData = {
-        success: true,
-        sheet: {
-          id: `sheet-client-${Date.now()}`,
-          title: 'Web Development Weekly Tasks (Updated)',
-          sender: 'prasanna.gunji@nybinfotech.com',
-          recipient: 'nafisa.khanam@nybinfotech.com',
-          technology: 'Web Development',
-          syncSource: 'Pasted Prasanna Mam Email (Direct Parse)',
-          totalDays: parsedDays.length,
-          activeDayNumber: currentActiveDay || 1,
-          activeDayName: 'Today',
-          updatedAt: new Date().toISOString()
-        },
-        syncSource: 'Pasted Prasanna Mam Email (Direct Parse)',
-        days: parsedDays
-      };
-      setChartData(newChartData);
-      setActiveTab('chart');
-      setPasteText('');
-      setStatusMessage({
-        type: 'success',
-        text: `Successfully parsed ${parsedDays.length} working days from Prasanna Mam's email!`
-      });
     } catch (err) {
-      const parsedDays = parseWeeklyEmailClient(pasteText);
-      const newChartData = {
-        success: true,
-        sheet: {
-          id: `sheet-client-${Date.now()}`,
-          title: 'Web Development Weekly Tasks (Updated)',
-          sender: 'prasanna.gunji@nybinfotech.com',
-          recipient: 'nafisa.khanam@nybinfotech.com',
-          technology: 'Web Development',
-          syncSource: 'Pasted Prasanna Mam Email (Direct Parse)',
-          totalDays: parsedDays.length,
-          activeDayNumber: currentActiveDay || 1,
-          activeDayName: 'Today',
-          updatedAt: new Date().toISOString()
-        },
-        syncSource: 'Pasted Prasanna Mam Email (Direct Parse)',
-        days: parsedDays
-      };
-      setChartData(newChartData);
-      setActiveTab('chart');
-      setPasteText('');
+      console.error('Error parsing pasted email:', err);
       setStatusMessage({
-        type: 'success',
-        text: `Successfully parsed ${parsedDays.length} working days from Prasanna Mam's email!`
+        type: 'error',
+        text: 'Error parsing email. Please check the text format.'
       });
     } finally {
       setIsParsing(false);
@@ -393,6 +397,7 @@ export default function WeeklyTaskChartModal({
                   const isCurrent = day?.dayNumber === (chartData?.sheet?.activeDayNumber || currentActiveDay || 5);
                   const topics = Array.isArray(day?.topicsCovered) ? day.topicsCovered : [];
                   const tasks = Array.isArray(day?.assignedTasks) ? day.assignedTasks : [];
+                  const topicCat = day?.topicCategory || detectTopicCategory(topics);
                   return (
                     <div
                       key={day?.id || `day-${day?.dayNumber}`}
@@ -439,10 +444,10 @@ export default function WeeklyTaskChartModal({
                           </div>
                         ) : (
                           <div className="space-y-3 text-xs">
-                            {/* Topics Covered (1. React) */}
+                            {/* Topics Covered (1. Dynamic Category) */}
                             <div>
                               <p className="font-bold text-slate-900 mb-1 text-[11px] flex items-center justify-between">
-                                <span>1. React (Topics Covered):</span>
+                                <span>1. {topicCat} (Topics Covered):</span>
                                 <span className="font-semibold text-[#0078d4]">{topics.length} lines</span>
                               </p>
                               <ul className="list-disc pl-4 space-y-1.5 text-slate-700 text-[11px]">
@@ -483,7 +488,7 @@ export default function WeeklyTaskChartModal({
 
                         <button
                           onClick={() => {
-                            onSelectDayForEOD(day.dayNumber);
+                            onSelectDayForEOD(day, chartData?.days || []);
                             onClose();
                           }}
                           className={`px-3 py-1 rounded text-[11px] font-bold flex items-center space-x-1 transition-all ${
