@@ -567,12 +567,32 @@ ${nextDayText}
 +---------------------------------------------------------------------------------------------------+`.trim();
 }
 
-export function generateClientDraft(promptText, tone = 'professional', activeDay = 5, customDays = null) {
+export function generateClientDraft(promptText, tone = 'professional', activeDay = null, customDays = null) {
   const lower = (promptText || '').toLowerCase();
   const now = new Date();
   const dd = String(now.getDate()).padStart(2, '0');
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const yyyy = now.getFullYear();
+
+  // Determine effective day number from prompt or day of week
+  let effectiveDay = activeDay;
+  const dayMatch = (promptText || '').match(/\bday\s*([1-5])\b/i);
+  if (dayMatch) {
+    effectiveDay = parseInt(dayMatch[1], 10);
+  } else if (lower.includes('monday')) {
+    effectiveDay = 1;
+  } else if (lower.includes('tuesday')) {
+    effectiveDay = 2;
+  } else if (lower.includes('wednesday')) {
+    effectiveDay = 3;
+  } else if (lower.includes('thursday')) {
+    effectiveDay = 4;
+  } else if (lower.includes('friday')) {
+    effectiveDay = 5;
+  } else if (!effectiveDay) {
+    const dow = now.getDay();
+    effectiveDay = (dow >= 1 && dow <= 5) ? dow : 1;
+  }
 
   const isPastedCurriculum = (lower.includes('topics covered') || lower.includes('topics') || lower.includes('syllabus') || lower.includes('day 1') || lower.includes('day 2')) && (lower.includes('assigned') || lower.includes('task') || lower.includes('assignment'));
   const isEOD = isPastedCurriculum || lower.includes('eod') || lower.includes('evening') || lower.includes('task summary') || lower.includes('daily') || lower.includes('status report') || lower.includes('task') || lower.includes('react') || lower.includes('javascript');
@@ -580,7 +600,7 @@ export function generateClientDraft(promptText, tone = 'professional', activeDay
 
   if (isPastedCurriculum) {
     const parsedDays = parseWeeklyEmailClient(promptText);
-    const schedule = getClientTodaySchedule(activeDay, parsedDays);
+    const schedule = getClientTodaySchedule(effectiveDay, parsedDays);
     const subject = `Daily Status Report [${dd}-${mm}-${yyyy}]`;
     const htmlBody = generateClientHtmlTable(schedule);
     const body = generateClientTextFormat(schedule);
@@ -601,7 +621,7 @@ export function generateClientDraft(promptText, tone = 'professional', activeDay
   }
 
   if (isEOD) {
-    const schedule = getClientTodaySchedule(activeDay, customDays);
+    const schedule = getClientTodaySchedule(effectiveDay, customDays);
     const subject = `Daily Status Report [${dd}-${mm}-${yyyy}]`;
     const htmlBody = generateClientHtmlTable(schedule);
     const body = generateClientTextFormat(schedule);

@@ -183,7 +183,10 @@ export default function App() {
 
       // Fallback: Autonomous client-side generator ensures Vercel / static hosting works flawlessly
       if (!data) {
-        data = generateClientDraft(activePrompt, tone, 5, weeklySchedule);
+        const todayDate = new Date();
+        let dayOfWeek = todayDate.getDay();
+        if (dayOfWeek === 0 || dayOfWeek === 6) dayOfWeek = 1;
+        data = generateClientDraft(activePrompt, tone, dayOfWeek, weeklySchedule);
       }
 
       if (data && data.success && data.draft) {
@@ -195,6 +198,18 @@ export default function App() {
         if (data.draft.isEODTable) setViewMode('table');
         if (data.draft.suggestedTo?.length > 0) setSelectedTo(data.draft.suggestedTo);
         if (data.draft.suggestedCc?.length > 0) setSelectedCc(data.draft.suggestedCc);
+
+        if (data.draft.scheduleData) {
+          try {
+            const stored = localStorage.getItem('mailcraft_weekly_schedule');
+            if (stored) {
+              const parsed = JSON.parse(stored);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setWeeklySchedule(parsed);
+              }
+            }
+          } catch (e) {}
+        }
 
         const catName = data.draft.scheduleData?.topicCategory || 'Topics';
         showToast(
@@ -331,25 +346,34 @@ export default function App() {
 
     setIsSavingDraft(true);
     try {
-      const res = await fetch('/api/emails/draft', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': currentUser?.id || 'usr-althaf'
-        },
-        body: JSON.stringify({
-          subject,
-          body,
-          htmlBody: htmlBody || null,
-          toRecipients: selectedTo,
-          ccRecipients: selectedCc,
-          attachments
-        })
-      });
+      let data = null;
+      try {
+        const res = await fetch('/api/emails/draft', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': currentUser?.id || 'usr-althaf'
+          },
+          body: JSON.stringify({
+            subject,
+            body,
+            htmlBody: htmlBody || null,
+            toRecipients: selectedTo,
+            ccRecipients: selectedCc,
+            attachments
+          })
+        });
 
-      const data = await res.json();
-      if (data.success) {
-        if (data.result.realDraftCreated) {
+        if (res && res.ok) {
+          const ct = res.headers.get('content-type') || '';
+          if (ct.includes('application/json')) {
+            data = await res.json().catch(() => null);
+          }
+        }
+      } catch (netErr) {}
+
+      if (data && data.success) {
+        if (data.result?.realDraftCreated) {
           showToast(
             'Saved into your Real Outlook Drafts!',
             'success',
@@ -364,10 +388,30 @@ export default function App() {
         }
         refreshMailbox();
       } else {
-        showToast(data.error || 'Failed to save draft', 'error');
+        // Fallback: Save draft locally in browser storage so it is never lost on static/Vercel hosting
+        const newDraft = {
+          id: `draft-${Date.now()}`,
+          subject,
+          body,
+          html_body: htmlBody || null,
+          status: 'draft',
+          created_at: new Date().toISOString().replace('T', ' ').substring(0, 19)
+        };
+        try {
+          const stored = localStorage.getItem('mailcraft_saved_drafts');
+          const draftsList = stored ? JSON.parse(stored) : [];
+          draftsList.unshift(newDraft);
+          localStorage.setItem('mailcraft_saved_drafts', JSON.stringify(draftsList.slice(0, 30)));
+        } catch (e) {}
+
+        showToast(
+          'Draft saved in MailCraft Drafts!',
+          'success',
+          'Your draft data has been saved locally and is preserved.'
+        );
       }
     } catch (err) {
-      showToast('Error saving draft to Outlook', 'error');
+      showToast('Error saving draft', 'error');
     } finally {
       setIsSavingDraft(false);
     }
