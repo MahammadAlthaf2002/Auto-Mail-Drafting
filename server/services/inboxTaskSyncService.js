@@ -43,10 +43,10 @@ class InboxTaskSyncService {
    */
   detectTopicCategory(topics = [], defaultName = 'Topics Covered') {
     const combined = (Array.isArray(topics) ? topics.join(' ') : String(topics || '')).toLowerCase();
-    if (combined.includes('javascript') || combined.includes('js ') || combined.includes('es6') || combined.includes('closure') || combined.includes('scope') || combined.includes('variable')) return 'JavaScript';
+    if (combined.includes('javascript') || combined.includes('js ') || combined.includes('es6') || combined.includes('closure') || combined.includes('scope') || combined.includes('variable') || combined.includes('hoisting') || combined.includes('operator') || combined.includes('dom') || combined.includes('event loop') || combined.includes('callback') || combined.includes('promise')) return 'JavaScript';
     if (combined.includes('react') || combined.includes('jsx') || combined.includes('hook') || combined.includes('redux')) return 'React';
     if (combined.includes('node') || combined.includes('express')) return 'Node.js';
-    if (combined.includes('html') || combined.includes('css') || combined.includes('dom')) return 'HTML/CSS';
+    if (combined.includes('html') || combined.includes('css') || combined.includes('tailwind') || combined.includes('flexbox')) return 'HTML/CSS';
     if (combined.includes('python')) return 'Python';
     if (combined.includes('angular')) return 'Angular';
     if (combined.includes('vue')) return 'Vue';
