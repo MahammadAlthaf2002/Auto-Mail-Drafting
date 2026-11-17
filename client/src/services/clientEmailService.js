@@ -751,6 +751,19 @@ export function parseWeeklyEmailClient(rawText) {
     });
   }
 
+  // Handle preamble (e.g. Day 1 without an explicit "Day 1" header label)
+  if (matches.length > 0 && matches[0].index > 0) {
+    const preamble = text.substring(0, matches[0].index).trim();
+    if (preamble.length > 30 && (/topics?\s*covered/i.test(preamble) || /assigned?\s*tasks?/i.test(preamble) || matches[0].dayNumText === '2')) {
+      matches.unshift({
+        index: 0,
+        dayNumText: '1',
+        dayNameText: 'Monday',
+        subHeader: 'Day 1'
+      });
+    }
+  }
+
   const parsedDays = [];
   if (matches.length > 0) {
     for (let i = 0; i < matches.length; i++) {
